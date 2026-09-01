@@ -337,20 +337,21 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           <input type="datetime-local" id="schedule-dt">
         </div>
         <div style="display:flex;flex-direction:column;justify-content:flex-end">
-          <button class="btn btn-secondary" onclick="setNow()" style="padding:12px">
-            ⚡ Agora
+          <button class="btn btn-secondary" onclick="setNow()" style="padding:12px" title="Definir para agora">
+            🕐 Agora
           </button>
         </div>
       </div>
     </div>
 
     <!-- Submit -->
-    <button class="btn btn-primary" id="btn-agendar" onclick="agendarPost()">
-      📅 Agendar Publicação
-    </button>
-
-    <div class="tip">
-      💡 Sem arquivo? Use o botão <strong>⚡ Agora</strong> para disparar imediatamente.
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-success" id="btn-agora" onclick="enviarAgora()" style="flex:1">
+        ⚡ Enviar Agora
+      </button>
+      <button class="btn btn-primary" id="btn-agendar" onclick="agendarPost()" style="flex:1">
+        📅 Agendar
+      </button>
     </div>
 
   </section>
@@ -647,6 +648,54 @@ function toggleGroup(id, name) {
 }
 
 // ══ Create Post ══════════════════════════════════════════
+async function enviarAgora() {
+  if(!uploadedFile.filename) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
+  if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"])
+    { toast("⚠️ Selecione ao menos um destino"); return; }
+  if(dests.wa && selGroups.length === 0) { toast("⚠️ Selecione ao menos um grupo"); return; }
+
+  // Define horário como agora
+  setNow();
+  const dt = document.getElementById("schedule-dt").value;
+
+  const btn = document.getElementById("btn-agora");
+  btn.disabled = true;
+  btn.textContent = "⏳ Enviando…";
+
+  // Cria o post
+  const resp = await fetch("/api/posts", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      filename:    uploadedFile.filename,
+      media_type:  uploadedFile.media_type,
+      caption:     document.getElementById("caption").value.trim(),
+      wa_groups:   dests.wa ? selGroups : [],
+      ig_feed:     dests["ig-feed"],
+      ig_stories:  dests["ig-stories"],
+      ig_reels:    dests["ig-reels"],
+      scheduled_at: dt,
+    }),
+  }).then(r=>r.json());
+
+  btn.disabled = false;
+  btn.textContent = "⚡ Enviar Agora";
+
+  if(!resp.ok) { toast("❌ " + resp.error); return; }
+
+  // Dispara imediatamente
+  await fetch(`/api/posts/${resp.id}/send`, {method:"POST"});
+
+  toast("✅ Enviando agora!");
+  clearFile();
+  document.getElementById("caption").value = "";
+
+  const btn2 = document.querySelectorAll("nav button")[1];
+  switchTab("posts", btn2);
+  loadPosts();
+  startPostStream();
+}
+
 async function agendarPost() {
   if(!uploadedFile.filename) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
   if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"])

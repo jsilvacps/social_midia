@@ -301,6 +301,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   <button onclick="switchTab('midia',this);loadLibrary()">
     <span class="icon">🖼️</span>MÍDIA
   </button>
+  <button onclick="switchTab('grupos',this)">
+    <span class="icon">🔍</span>GRUPOS
+  </button>
   <button onclick="switchTab('config',this)">
     <span class="icon">⚙️</span>CONFIG
   </button>
@@ -565,6 +568,22 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       ⚠️ Reels e Stories requerem vídeo no formato MP4 (9:16). Feed aceita imagem e vídeo.
     </div>
 
+    <!-- Busca de Grupos -->
+    <div class="card">
+      <p class="card-title">🔍 Busca de Grupos (Google)</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="field">
+          <label>Google API Key</label>
+          <input type="password" id="google-api-key" placeholder="AIza…">
+        </div>
+        <div class="field">
+          <label>Search Engine ID (CX)</label>
+          <input type="text" id="google-cx" placeholder="Ex: a1b2c3d4e5f6g7h8i">
+        </div>
+        <button class="btn btn-primary" onclick="saveConfig()" style="align-self:flex-end">💾 Salvar</button>
+      </div>
+    </div>
+
     <!-- Rodapé -->
     <div style="text-align:center;padding:24px 0 8px;font-size:11px;color:var(--muted)">
       <div style="font-weight:700;font-size:14px;background:linear-gradient(90deg,#00e5a0,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px">ZapShot v1.0</div>
@@ -589,6 +608,38 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     </div>
   </section>
 
+  <!-- ══ Tab: Grupos ══════════════════════════════════════════ -->
+  <section class="tab" id="tab-grupos">
+    <div class="card">
+      <p class="card-title">🔍 Buscar Grupos de WhatsApp</p>
+      <div class="field">
+        <label>Tema / Segmento</label>
+        <input type="text" id="grupos-tema" placeholder="Ex: vendas, imóveis, pet shop…">
+      </div>
+      <div class="field">
+        <label>Localidade</label>
+        <input type="text" id="grupos-local" placeholder="Ex: Campinas SP, Passos MG…">
+      </div>
+      <button class="btn btn-primary" onclick="buscarGrupos()" id="btn-buscar-grupos" style="width:100%;margin-top:4px">
+        🔍 Buscar Grupos
+      </button>
+    </div>
+
+    <div id="grupos-nokey" style="display:none;margin-top:8px" class="tip">
+      ⚠️ Chave do Google não configurada. Vá em <strong>Config → Busca de Grupos</strong> e adicione sua chave API.
+    </div>
+
+    <div id="grupos-resultado" style="display:none;margin-top:8px">
+      <p class="card-title" id="grupos-count" style="margin-bottom:8px"></p>
+      <div id="grupos-list" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <div id="grupos-empty" style="display:none;flex-direction:column;align-items:center;padding:40px;color:var(--muted)">
+      <div style="font-size:40px">😕</div>
+      <p>Nenhum grupo encontrado.<br>Tente outros termos.</p>
+    </div>
+  </section>
+
 </main>
 
 <!-- Mobile nav (hidden on desktop) -->
@@ -601,6 +652,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   </button>
   <button onclick="switchTab('midia',this);loadLibrary()">
     <span class="icon">🖼️</span>MÍDIA
+  </button>
+  <button onclick="switchTab('grupos',this)">
+    <span class="icon">🔍</span>GRUPOS
   </button>
   <button onclick="switchTab('config',this)">
     <span class="icon">⚙️</span>CONFIG
@@ -631,7 +685,9 @@ async function init() {
   if(cfg.evo_instance) document.getElementById("evo-instance").value = cfg.evo_instance;
   if(cfg.ig_user_id)   document.getElementById("ig-user-id").value   = cfg.ig_user_id;
   if(cfg.ig_token)     document.getElementById("ig-token").value     = cfg.ig_token;
-  if(cfg.app_url)      document.getElementById("app-url").value      = cfg.app_url;
+  if(cfg.app_url)        document.getElementById("app-url").value        = cfg.app_url;
+  if(cfg.google_api_key) document.getElementById("google-api-key").value = cfg.google_api_key;
+  if(cfg.google_cx)      document.getElementById("google-cx").value      = cfg.google_cx;
 
   if("serviceWorker" in navigator)
     navigator.serviceWorker.register("/static/sw.js?v=5").catch(()=>{});
@@ -1094,6 +1150,66 @@ async function sendNow(id, btn) {
   if(!resp.ok) { toast("❌ " + resp.error); btn.disabled=false; btn.textContent="⚡"; return; }
   toast("📡 Enviando…");
   startPostStream();
+}
+
+// ══ Busca de Grupos ══════════════════════════════════════
+async function buscarGrupos() {
+  const tema  = document.getElementById("grupos-tema").value.trim();
+  const local = document.getElementById("grupos-local").value.trim();
+  if(!tema && !local) { toast("⚠️ Preencha o tema ou localidade"); return; }
+
+  const btn = document.getElementById("btn-buscar-grupos");
+  btn.disabled = true;
+  btn.textContent = "⏳ Buscando…";
+
+  document.getElementById("grupos-resultado").style.display = "none";
+  document.getElementById("grupos-empty").style.display     = "none";
+  document.getElementById("grupos-nokey").style.display     = "none";
+
+  const resp = await fetch("/api/grupos/buscar", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({tema, local}),
+  }).then(r=>r.json());
+
+  btn.disabled = false;
+  btn.textContent = "🔍 Buscar Grupos";
+
+  if(resp.error === "no_key") {
+    document.getElementById("grupos-nokey").style.display = "block";
+    return;
+  }
+  if(!resp.ok) { toast("❌ " + resp.error); return; }
+
+  const items = resp.results || [];
+  if(!items.length) {
+    document.getElementById("grupos-empty").style.display = "flex";
+    return;
+  }
+
+  const list = document.getElementById("grupos-list");
+  list.innerHTML = "";
+  items.forEach(g => {
+    const card = document.createElement("div");
+    card.className = "post-card";
+    card.innerHTML = `
+      <div class="post-card-body">
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px">${esc(g.title)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${esc(g.snippet)}</div>
+        <div style="display:flex;gap:8px">
+          <a href="${esc(g.link)}" target="_blank" class="btn btn-success btn-sm" style="text-decoration:none">
+            💬 Abrir Grupo
+          </a>
+          <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${esc(g.link)}');toast('🔗 Link copiado!')">
+            📋 Copiar Link
+          </button>
+        </div>
+      </div>`;
+    list.appendChild(card);
+  });
+
+  document.getElementById("grupos-count").textContent = `${items.length} grupo${items.length!==1?"s":""} encontrado${items.length!==1?"s":""}`;
+  document.getElementById("grupos-resultado").style.display = "block";
 }
 
 async function deletePost(id) {

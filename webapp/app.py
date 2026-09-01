@@ -757,6 +757,53 @@ def api_evo_test():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
+# ── Busca de Grupos WhatsApp ────────────────────────────────────────────────────
+@app.route("/api/grupos/buscar", methods=["POST"])
+def api_buscar_grupos():
+    data  = request.get_json() or {}
+    tema  = data.get("tema", "").strip()
+    local = data.get("local", "").strip()
+    cfg   = load_config()
+
+    api_key = cfg.get("google_api_key", "") or os.getenv("GOOGLE_API_KEY", "")
+    cx      = cfg.get("google_cx", "")      or os.getenv("GOOGLE_CX", "")
+
+    if not api_key or not cx:
+        return jsonify({"ok": False, "error": "no_key"})
+
+    # Monta query: busca links de grupos WA com tema + localidade
+    parts = ["site:chat.whatsapp.com OR \"chat.whatsapp.com\""]
+    if tema:  parts.append(tema)
+    if local: parts.append(local)
+    query = " ".join(parts)
+
+    try:
+        r = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={"key": api_key, "cx": cx, "q": query, "num": 10},
+            timeout=15
+        )
+        data = r.json()
+        if "error" in data:
+            return jsonify({"ok": False, "error": data["error"].get("message","Erro Google")})
+
+        items = data.get("items", [])
+        results = []
+        for item in items:
+            link = item.get("link","")
+            # Filtra apenas links de grupos WA
+            if "chat.whatsapp.com" in link:
+                results.append({
+                    "title":   item.get("title","Grupo WhatsApp"),
+                    "snippet": item.get("snippet",""),
+                    "link":    link,
+                })
+
+        print(f"[buscar_grupos] query={query!r} total={len(results)}")
+        return jsonify({"ok": True, "results": results})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
 @app.route("/api/config/ig-test", methods=["POST"])
 def api_ig_test():
     data  = request.get_json() or {}

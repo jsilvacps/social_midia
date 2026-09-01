@@ -59,7 +59,8 @@ def load_config() -> dict:
     # env vars sobrescrevem
     for env, key in [("EVO_URL","evo_url"),("EVO_TOKEN","evo_token"),
                      ("EVO_INSTANCE","evo_instance"),("IG_USER_ID","ig_user_id"),
-                     ("IG_TOKEN","ig_token"),("APP_URL","app_url")]:
+                     ("IG_TOKEN","ig_token"),("APP_URL","app_url"),
+                     ("GOOGLE_API_KEY","google_api_key"),("GOOGLE_CX","google_cx")]:
         val = os.getenv(env, "")
         if val:
             cfg[key] = val

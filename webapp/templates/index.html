@@ -1252,12 +1252,16 @@ function startPostStream() {
 
 // ══ Config ═══════════════════════════════════════════════
 async function saveConfig() {
-  await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      google_api_key: document.getElementById("google-api-key").value.trim(),
-      google_cx:      document.getElementById("google-cx").value.trim(),
-    })});
-  toast("✅ Configuração salva!");
+  const key = document.getElementById("google-api-key").value.trim();
+  const cx  = document.getElementById("google-cx").value.trim();
+  if(!key || !cx) { toast("⚠️ Preencha os dois campos antes de salvar"); return; }
+  const resp = await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ google_api_key: key, google_cx: cx })}).then(r=>r.json());
+  if(resp.ok) {
+    toast("✅ Chaves salvas! Teste na aba Grupos agora.");
+  } else {
+    toast("❌ Erro ao salvar: " + (resp.error||"desconhecido"));
+  }
 }
 
 async function saveEvo() {

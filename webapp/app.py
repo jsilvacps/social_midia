@@ -147,13 +147,13 @@ def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        b64, mimetype = _compress_image_b64(filepath)
+        url = _media_url(filepath.name, cfg)
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
-                  "mimetype": mimetype, "caption": caption, "media": b64},
-            timeout=60
+                  "mimetype": "image/jpeg", "caption": caption, "media": url},
+            timeout=30
         )
         if r.status_code in (200, 201):
             return True, ""
@@ -171,7 +171,7 @@ def wa_send_video(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "video",
                   "mimetype": "video/mp4", "caption": caption, "media": url},
-            timeout=30
+            timeout=60
         )
         if r.status_code in (200, 201):
             return True, ""

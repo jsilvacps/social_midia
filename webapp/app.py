@@ -120,20 +120,26 @@ def wa_get_groups(cfg) -> tuple[list, str]:
     except Exception as exc:
         return [], str(exc)
 
+def _media_url(filename: str, cfg) -> str:
+    """URL pública do arquivo para a Evolution API buscar diretamente."""
+    app_url = cfg.get("app_url", "").rstrip("/")
+    if not app_url:
+        app_url = "https://social-midia.onrender.com"
+    return f"{app_url}/api/media/{filename}"
+
 def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[bool, str]:
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        with open(filepath, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
         ext      = filepath.suffix.lower().lstrip(".")
         mimetype = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+        url      = _media_url(filepath.name, cfg)
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
-                  "mimetype": mimetype, "caption": caption, "media": b64},
-            timeout=180
+                  "mimetype": mimetype, "caption": caption, "media": url},
+            timeout=30
         )
         if r.status_code in (200, 201):
             return True, ""
@@ -145,14 +151,13 @@ def wa_send_video(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        with open(filepath, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
+        url = _media_url(filepath.name, cfg)
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "video",
-                  "mimetype": "video/mp4", "caption": caption, "media": b64},
-            timeout=300
+                  "mimetype": "video/mp4", "caption": caption, "media": url},
+            timeout=30
         )
         if r.status_code in (200, 201):
             return True, ""

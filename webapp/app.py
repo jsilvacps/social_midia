@@ -390,7 +390,11 @@ def api_media(filename):
     path = UPLOADS_DIR / safe
     if not path.exists():
         return "Not found", 404
-    return send_file(path)
+    ext = path.suffix.lower()
+    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
+    mimetype = mime_map.get(ext, "application/octet-stream")
+    return send_file(str(path), mimetype=mimetype, conditional=False)
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])
@@ -410,6 +414,60 @@ def api_upload():
     filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
     f.save(str(UPLOADS_DIR / filename))
     return jsonify({"ok": True, "filename": filename, "media_type": media_type})
+
+# ── Library ────────────────────────────────────────────────────────────────────
+LIBRARY_DIR = APP_DIR / "library"
+LIBRARY_DIR.mkdir(exist_ok=True)
+
+@app.route("/api/library", methods=["GET"])
+def api_library_list():
+    files = []
+    for p in sorted(LIBRARY_DIR.iterdir(), key=lambda f: -f.stat().st_mtime):
+        ext = p.suffix.lower()
+        if ext in ALLOWED_IMAGE:
+            mtype = "image"
+        elif ext in ALLOWED_VIDEO:
+            mtype = "video"
+        else:
+            continue
+        size_kb = round(p.stat().st_size / 1024)
+        files.append({"filename": p.name, "media_type": mtype, "size_kb": size_kb})
+    return jsonify({"ok": True, "files": files})
+
+@app.route("/api/library/upload", methods=["POST"])
+def api_library_upload():
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "Nenhum arquivo"})
+    ext = Path(f.filename).suffix.lower()
+    if ext in ALLOWED_IMAGE:
+        mtype = "image"
+    elif ext in ALLOWED_VIDEO:
+        mtype = "video"
+    else:
+        return jsonify({"ok": False, "error": "Formato não suportado"})
+    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
+    f.save(str(LIBRARY_DIR / filename))
+    return jsonify({"ok": True, "filename": filename, "media_type": mtype})
+
+@app.route("/api/library/<filename>", methods=["DELETE"])
+def api_library_delete(filename):
+    safe = Path(filename).name
+    path = LIBRARY_DIR / safe
+    if path.exists():
+        path.unlink()
+    return jsonify({"ok": True})
+
+@app.route("/api/library/file/<filename>")
+def api_library_file(filename):
+    safe = Path(filename).name
+    path = LIBRARY_DIR / safe
+    if not path.exists():
+        return "Not found", 404
+    ext = path.suffix.lower()
+    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
+    return send_file(str(path), mimetype=mime_map.get(ext, "application/octet-stream"), conditional=False)
 
 # ── Groups ─────────────────────────────────────────────────────────────────────
 @app.route("/api/wa/groups")

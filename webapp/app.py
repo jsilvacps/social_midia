@@ -11,7 +11,11 @@ import sqlite3
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+def now_brasilia():
+    """Retorna datetime atual no fuso de Brasília (UTC-3)."""
+    return datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-3)))
 from pathlib import Path
 
 import requests
@@ -314,7 +318,7 @@ def process_post(post_id: int):
     conn = db()
     conn.execute("""UPDATE posts SET status=?, sent_at=?, result=? WHERE id=?""",
                  (final_status,
-                  datetime.now().isoformat(timespec="seconds"),
+                  now_brasilia().strftime("%Y-%m-%dT%H:%M:%S"),
                   json.dumps(result, ensure_ascii=False),
                   post_id))
     conn.commit(); conn.close()
@@ -323,7 +327,7 @@ def process_post(post_id: int):
 def _scheduler_loop():
     while True:
         try:
-            now  = datetime.now().strftime("%Y-%m-%dT%H:%M")
+            now  = now_brasilia().strftime("%Y-%m-%dT%H:%M")
             conn = db()
             rows = conn.execute(
                 "SELECT id FROM posts WHERE status='pending' AND scheduled_at<=?",

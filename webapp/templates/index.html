@@ -472,14 +472,18 @@ function setDefaultDateTime() {
   const d = new Date();
   d.setMinutes(d.getMinutes() + 5);
   d.setSeconds(0);
-  const iso = d.toISOString().slice(0,16);
-  document.getElementById("schedule-dt").value = iso;
+  document.getElementById("schedule-dt").value = localISOString(d);
+}
+
+function localISOString(d) {
+  // Retorna datetime-local no fuso do navegador (ex: 2026-09-01T21:00)
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function setNow() {
   const d = new Date();
-  const iso = d.toISOString().slice(0,16);
-  document.getElementById("schedule-dt").value = iso;
+  document.getElementById("schedule-dt").value = localISOString(d);
 }
 
 // ══ Tab ══════════════════════════════════════════════════

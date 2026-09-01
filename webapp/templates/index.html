@@ -165,6 +165,12 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
 /* Post Cards */
 .post-card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.lib-item{background:var(--card);border:1.5px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:border-color .2s}
+.lib-item:hover{border-color:var(--primary)}
+.lib-item img,.lib-item video{width:100%;height:110px;object-fit:cover;display:block}
+.lib-item-info{padding:6px 8px;display:flex;align-items:center;justify-content:space-between;gap:4px}
+.lib-item-name{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.lib-item-del{background:none;border:none;cursor:pointer;color:#F87171;font-size:16px;padding:0 2px;flex-shrink:0}
 .post-card-img{width:100%;height:140px;object-fit:cover}
 .post-card-body{padding:12px 14px}
 .post-status{display:inline-flex;align-items:center;gap:5px;
@@ -433,6 +439,20 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
   </section>
 
+  <!-- ══ Tab: Mídia ══════════════════════════════════════════ -->
+  <section class="tab" id="tab-midia">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span class="card-title" style="margin:0">Biblioteca de Mídias</span>
+      <button class="btn btn-primary btn-sm" onclick="document.getElementById('lib-input').click()">+ Adicionar</button>
+    </div>
+    <input type="file" id="lib-input" accept="image/*,video/*" multiple style="display:none" onchange="uploadToLibrary(this)">
+    <div id="lib-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px"></div>
+    <div id="lib-empty" style="display:none;flex-direction:column;align-items:center;padding:40px;color:var(--muted)">
+      <div style="font-size:40px">🖼️</div>
+      <p>Nenhuma mídia salva</p>
+    </div>
+  </section>
+
 </main>
 
 <!-- Nav -->
@@ -442,6 +462,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   </button>
   <button onclick="switchTab('posts',this);loadPosts()">
     <span class="icon">📅</span>POSTS
+  </button>
+  <button onclick="switchTab('midia',this);loadLibrary()">
+    <span class="icon">🖼️</span>MÍDIA
   </button>
   <button onclick="switchTab('config',this)">
     <span class="icon">⚙️</span>CONFIG
@@ -669,7 +692,7 @@ function toggleGroup(id, name) {
 
 // ══ Create Post ══════════════════════════════════════════
 async function enviarAgora() {
-  if(!uploadedFile.filename) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
+  if(!uploadedFile.filename && !uploadedFile.library) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
   if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"])
     { toast("⚠️ Selecione ao menos um destino"); return; }
   if(dests.wa && selGroups.length === 0) { toast("⚠️ Selecione ao menos um grupo"); return; }
@@ -687,7 +710,8 @@ async function enviarAgora() {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
-      filename:    uploadedFile.filename,
+      filename:    uploadedFile.filename || "",
+      library:     uploadedFile.library || "",
       media_type:  uploadedFile.media_type,
       caption:     document.getElementById("caption").value.trim(),
       wa_groups:   dests.wa ? selGroups : [],
@@ -717,7 +741,7 @@ async function enviarAgora() {
 }
 
 async function agendarPost() {
-  if(!uploadedFile.filename) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
+  if(!uploadedFile.filename && !uploadedFile.library) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
   if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"])
     { toast("⚠️ Selecione ao menos um destino"); return; }
   if(dests.wa && selGroups.length === 0) { toast("⚠️ Selecione ao menos um grupo"); return; }
@@ -733,7 +757,8 @@ async function agendarPost() {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
-      filename:    uploadedFile.filename,
+      filename:    uploadedFile.filename || "",
+      library:     uploadedFile.library || "",
       media_type:  uploadedFile.media_type,
       caption:     document.getElementById("caption").value.trim(),
       wa_groups:   dests.wa ? selGroups : [],
@@ -925,6 +950,84 @@ function toast(msg){
 }
 
 init();
+
+// ══ Library ══════════════════════════════════════════════
+async function loadLibrary() {
+  const grid  = document.getElementById("lib-grid");
+  const empty = document.getElementById("lib-empty");
+  grid.innerHTML = `<div style="color:var(--muted);padding:20px">Carregando…</div>`;
+  const resp = await fetch("/api/library").then(r=>r.json());
+  grid.innerHTML = "";
+  if(!resp.ok || !resp.files.length) {
+    empty.style.display = "flex"; return;
+  }
+  empty.style.display = "none";
+  resp.files.forEach(f => {
+    const div = document.createElement("div");
+    div.className = "lib-item";
+    const isVideo = f.media_type === "video";
+    const preview = isVideo
+      ? `<video src="/api/library/file/${f.filename}" muted preload="metadata" style="width:100%;height:110px;object-fit:cover"></video>`
+      : `<img src="/api/library/file/${f.filename}" loading="lazy">`;
+    div.innerHTML = `
+      ${preview}
+      <div class="lib-item-info">
+        <span class="lib-item-name" title="${esc(f.filename)}">${f.size_kb}KB</span>
+        <button class="lib-item-del" onclick="deleteFromLibrary('${esc(f.filename)}',this)" title="Remover">🗑</button>
+      </div>`;
+    div.addEventListener("click", e => {
+      if(e.target.closest(".lib-item-del")) return;
+      useFromLibrary(f);
+    });
+    grid.appendChild(div);
+  });
+}
+
+async function uploadToLibrary(input) {
+  const files = Array.from(input.files);
+  for(const file of files) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const resp = await fetch("/api/library/upload", {method:"POST", body:fd}).then(r=>r.json());
+    if(!resp.ok) toast("❌ " + resp.error);
+  }
+  input.value = "";
+  toast(`✅ ${files.length} arquivo(s) salvo(s)`);
+  loadLibrary();
+}
+
+async function deleteFromLibrary(filename, btn) {
+  btn.textContent = "…";
+  await fetch(`/api/library/${encodeURIComponent(filename)}`, {method:"DELETE"});
+  loadLibrary();
+}
+
+function useFromLibrary(f) {
+  // Preenche como se tivesse feito upload normal
+  uploadedFile = {filename: null, media_type: f.media_type, library: f.filename};
+  // Vai para aba criar e mostra preview
+  const btn0 = document.querySelectorAll("nav button")[0];
+  switchTab("criar", btn0);
+  // Monta preview visual
+  const zone    = document.getElementById("upload-zone");
+  const preview = document.getElementById("media-preview");
+  zone.style.display = "none";
+  preview.style.display = "flex";
+  const url = `/api/library/file/${f.filename}`;
+  const img = document.getElementById("preview-img");
+  const vid = document.getElementById("preview-vid");
+  if(f.media_type === "video") {
+    vid.src = url; vid.style.display = "block";
+    img.style.display = "none";
+  } else {
+    img.src = url; img.style.display = "block";
+    vid.style.display = "none";
+  }
+  document.getElementById("file-type-ico").textContent = f.media_type === "video" ? "🎬" : "🖼️";
+  document.getElementById("file-name-label").textContent = f.filename;
+  document.getElementById("file-size-label").textContent = "";
+  toast("✅ Mídia selecionada — configure e envie!");
+}
 </script>
 </body>
 </html>

@@ -148,6 +148,9 @@ def _media_url(filename: str, cfg) -> str:
     app_url = cfg.get("app_url", "").rstrip("/")
     if not app_url:
         app_url = "https://social-midia.onrender.com"
+    if filename.startswith("__lib__"):
+        lib_filename = filename[len("__lib__"):]
+        return f"{app_url}/api/library/file/{lib_filename}"
     return f"{app_url}/api/media/{filename}"
 
 def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[bool, str]:
@@ -300,7 +303,12 @@ def process_post(post_id: int):
     ig_feed    = bool(row["ig_feed"])
     ig_stories = bool(row["ig_stories"])
     ig_reels   = bool(row["ig_reels"])
-    filepath   = UPLOADS_DIR / filename
+    # Suporte a arquivo da biblioteca
+    if filename.startswith("__lib__"):
+        lib_filename = filename[len("__lib__"):]
+        filepath = LIBRARY_DIR / lib_filename
+    else:
+        filepath = UPLOADS_DIR / filename
     is_video   = media_type == "video"
 
     result = {"wa": {}, "ig": {}}
@@ -499,6 +507,11 @@ def api_create_post():
     ig_stories = int(bool(data.get("ig_stories")))
     ig_reels   = int(bool(data.get("ig_reels")))
     scheduled_at = data.get("scheduled_at", "")
+
+    # Suporte a arquivo da biblioteca
+    library = data.get("library", "")
+    if library and not filename:
+        filename = f"__lib__{library}"
 
     if not filename:
         return jsonify({"ok": False, "error": "Nenhum arquivo selecionado"})

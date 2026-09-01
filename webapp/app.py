@@ -299,20 +299,29 @@ def process_post(post_id: int):
     result = {"wa": {}, "ig": {}}
     errors = []
 
+    def _save_partial():
+        c = db()
+        c.execute("UPDATE posts SET result=? WHERE id=?",
+                  (json.dumps(result, ensure_ascii=False), post_id))
+        c.commit(); c.close()
+
     # WhatsApp groups
     for i, g in enumerate(wa_groups):
         gid  = g.get("id", g) if isinstance(g, dict) else g
         name = g.get("name", gid) if isinstance(g, dict) else gid
+        result["wa"][name] = "⏳ enviando..."
+        _save_partial()
         print(f"[post {post_id}] Enviando para {name} ({i+1}/{len(wa_groups)})")
         ok, err = wa_send(gid, caption, filepath, media_type, cfg)
         result["wa"][name] = "ok" if ok else err
+        _save_partial()
         if not ok:
             errors.append(f"WA {name}: {err}")
             print(f"[post {post_id}] ERRO {name}: {err}")
         else:
             print(f"[post {post_id}] OK {name}")
         if i < len(wa_groups) - 1:
-            time.sleep(2)  # delay entre grupos para não sobrecarregar
+            time.sleep(1)
 
     # Instagram
     media_url = ig_media_url(filename, cfg)

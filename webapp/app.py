@@ -120,26 +120,40 @@ def wa_get_groups(cfg) -> tuple[list, str]:
     except Exception as exc:
         return [], str(exc)
 
-def _media_url(filename: str, cfg) -> str:
-    """URL pública do arquivo para a Evolution API buscar diretamente."""
-    app_url = cfg.get("app_url", "").rstrip("/")
-    if not app_url:
-        app_url = "https://social-midia.onrender.com"
-    return f"{app_url}/api/media/{filename}"
+def _compress_image_b64(filepath: Path, max_kb: int = 400) -> tuple[str, str]:
+    """Comprime imagem para no máximo max_kb KB e retorna (base64, mimetype)."""
+    from PIL import Image
+    import io as _io
+    img = Image.open(filepath)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    # Reduz dimensão se muito grande
+    max_dim = 1280
+    if max(img.width, img.height) > max_dim:
+        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+    # Comprime até caber em max_kb
+    quality = 85
+    buf = _io.BytesIO()
+    while quality >= 40:
+        buf.seek(0); buf.truncate()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        if buf.tell() <= max_kb * 1024:
+            break
+        quality -= 10
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return b64, "image/jpeg"
 
 def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[bool, str]:
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        ext      = filepath.suffix.lower().lstrip(".")
-        mimetype = f"image/{ext}" if ext != "jpg" else "image/jpeg"
-        url      = _media_url(filepath.name, cfg)
+        b64, mimetype = _compress_image_b64(filepath)
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
-                  "mimetype": mimetype, "caption": caption, "media": url},
-            timeout=30
+                  "mimetype": mimetype, "caption": caption, "media": b64},
+            timeout=60
         )
         if r.status_code in (200, 201):
             return True, ""

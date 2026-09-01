@@ -189,6 +189,23 @@ def wa_send_video(group_id: str, caption: str, filepath: Path, cfg, db_filename:
     except Exception as exc:
         return False, str(exc)
 
+def wa_send_text(group_id: str, text: str, cfg) -> tuple[bool, str]:
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    try:
+        r = requests.post(
+            f"{base}/message/sendText/{instance}",
+            headers=_evo_headers(cfg),
+            json={"number": group_id, "text": text},
+            timeout=30
+        )
+        print(f"[sendText] {group_id} status={r.status_code} body={r.text[:200]}")
+        if r.status_code in (200, 201):
+            return True, ""
+        return False, f"HTTP {r.status_code}: {r.text[:300]}"
+    except Exception as exc:
+        return False, str(exc)
+
 def wa_send(group_id: str, caption: str, filepath: Path, media_type: str, cfg, db_filename: str = "") -> tuple[bool, str]:
     if media_type == "video":
         return wa_send_video(group_id, caption, filepath, cfg, db_filename)
@@ -517,6 +534,18 @@ def api_library_file(filename):
     with open(str(path), "rb") as f:
         data = f.read()
     return Response(data, mimetype=mimetype, headers={"Content-Length": str(len(data))})
+
+# ── Test ───────────────────────────────────────────────────────────────────────
+@app.route("/api/wa/test-text")
+def api_wa_test_text():
+    """Envia texto de teste para o primeiro grupo disponível."""
+    cfg = load_config()
+    groups, err = wa_get_groups(cfg)
+    if err or not groups:
+        return jsonify({"ok": False, "error": err or "Sem grupos"})
+    group = groups[0]
+    ok, err2 = wa_send_text(group["id"], "🔧 Teste de conexão - pode ignorar", cfg)
+    return jsonify({"ok": ok, "group": group["name"], "error": err2})
 
 # ── Groups ─────────────────────────────────────────────────────────────────────
 @app.route("/api/wa/groups")

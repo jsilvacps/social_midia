@@ -767,38 +767,35 @@ def api_buscar_grupos():
     cfg   = load_config()
 
     api_key = cfg.get("google_api_key", "") or os.getenv("GOOGLE_API_KEY", "")
-    cx      = cfg.get("google_cx", "")      or os.getenv("GOOGLE_CX", "")
 
-    if not api_key or not cx:
+    if not api_key:
         return jsonify({"ok": False, "error": "no_key"})
 
-    # Monta query: busca links de grupos WA com tema + localidade
-    parts = ["site:chat.whatsapp.com OR \"chat.whatsapp.com\""]
+    # Monta query
+    parts = ["chat.whatsapp.com"]
     if tema:  parts.append(tema)
     if local: parts.append(local)
     query = " ".join(parts)
 
     try:
         r = requests.get(
-            "https://www.googleapis.com/customsearch/v1",
-            params={"key": api_key, "cx": cx, "q": query, "num": 10},
+            "https://api.scaleserp.com/search",
+            params={"api_key": api_key, "q": query, "num": 10, "gl": "br", "hl": "pt"},
             timeout=15
         )
         data = r.json()
-        if "error" in data:
-            return jsonify({"ok": False, "error": data["error"].get("message","Erro Google")})
+        if data.get("request_info", {}).get("success") is False:
+            return jsonify({"ok": False, "error": data.get("request_info", {}).get("message", "Erro ScaleSerp")})
 
-        items = data.get("items", [])
+        items = data.get("organic_results", [])
         results = []
         for item in items:
-            link = item.get("link","")
-            # Filtra apenas links de grupos WA
-            if "chat.whatsapp.com" in link:
-                results.append({
-                    "title":   item.get("title","Grupo WhatsApp"),
-                    "snippet": item.get("snippet",""),
-                    "link":    link,
-                })
+            link = item.get("link", "")
+            results.append({
+                "title":   item.get("title", "Grupo WhatsApp"),
+                "snippet": item.get("snippet", ""),
+                "link":    link,
+            })
 
         print(f"[buscar_grupos] query={query!r} total={len(results)}")
         return jsonify({"ok": True, "results": results})

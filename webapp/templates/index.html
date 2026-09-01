@@ -570,15 +570,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
     <!-- Busca de Grupos -->
     <div class="card">
-      <p class="card-title">🔍 Busca de Grupos (Google)</p>
+      <p class="card-title">🔍 Busca de Grupos (ScaleSerp)</p>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="field">
-          <label>Google API Key</label>
-          <input type="password" id="google-api-key" placeholder="AIza…">
-        </div>
-        <div class="field">
-          <label>Search Engine ID (CX)</label>
-          <input type="text" id="google-cx" placeholder="Ex: a1b2c3d4e5f6g7h8i">
+          <label>ScaleSerp API Key</label>
+          <input type="password" id="google-api-key" placeholder="Ex: FFB41DA0…">
         </div>
         <button class="btn btn-primary" onclick="saveConfig()" style="align-self:flex-end">💾 Salvar</button>
       </div>
@@ -650,7 +646,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     </div>
 
     <div id="grupos-nokey" style="display:none;margin-top:8px" class="tip">
-      ⚠️ Chave do Google não configurada. Vá em <strong>Config → Busca de Grupos</strong> e adicione sua chave API.
+      ⚠️ Chave ScaleSerp não configurada. Vá em <strong>Config → Busca de Grupos</strong> e adicione sua chave API.
     </div>
 
     <div id="grupos-resultado" style="display:none;margin-top:8px">
@@ -711,7 +707,6 @@ async function init() {
   if(cfg.ig_token)     document.getElementById("ig-token").value     = cfg.ig_token;
   if(cfg.app_url)        document.getElementById("app-url").value        = cfg.app_url;
   if(cfg.google_api_key) document.getElementById("google-api-key").value = cfg.google_api_key;
-  if(cfg.google_cx)      document.getElementById("google-cx").value      = cfg.google_cx;
 
   if("serviceWorker" in navigator)
     navigator.serviceWorker.register("/static/sw.js?v=5").catch(()=>{});
@@ -1296,12 +1291,11 @@ function startPostStream() {
 // ══ Config ═══════════════════════════════════════════════
 async function saveConfig() {
   const key = document.getElementById("google-api-key").value.trim();
-  const cx  = document.getElementById("google-cx").value.trim();
-  if(!key || !cx) { toast("⚠️ Preencha os dois campos antes de salvar"); return; }
+  if(!key) { toast("⚠️ Preencha a chave ScaleSerp antes de salvar"); return; }
   const resp = await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ google_api_key: key, google_cx: cx })}).then(r=>r.json());
+    body:JSON.stringify({ google_api_key: key })}).then(r=>r.json());
   if(resp.ok) {
-    toast("✅ Chaves salvas! Teste na aba Grupos agora.");
+    toast("✅ Chave ScaleSerp salva! Teste na aba Grupos agora.");
   } else {
     toast("❌ Erro ao salvar: " + (resp.error||"desconhecido"));
   }

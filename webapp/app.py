@@ -442,6 +442,21 @@ def api_library_list():
         files.append({"filename": p.name, "media_type": mtype, "size_kb": size_kb})
     return jsonify({"ok": True, "files": files})
 
+@app.route("/api/library/debug/<filename>")
+def api_library_debug(filename):
+    safe = Path(filename).name
+    path = LIBRARY_DIR / safe
+    exists = path.exists()
+    size = path.stat().st_size if exists else -1
+    try:
+        with open(str(path), "rb") as fh:
+            head = fh.read(16)
+        head_hex = head.hex()
+    except Exception as e:
+        head_hex = str(e)
+    return jsonify({"exists": exists, "size": size, "path": str(path), "head_hex": head_hex,
+                    "library_dir": str(LIBRARY_DIR), "library_dir_exists": LIBRARY_DIR.exists()})
+
 @app.route("/api/library/upload", methods=["POST"])
 def api_library_upload():
     f = request.files.get("file")
@@ -455,8 +470,15 @@ def api_library_upload():
     else:
         return jsonify({"ok": False, "error": "Formato não suportado"})
     filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
-    f.save(str(LIBRARY_DIR / filename))
-    return jsonify({"ok": True, "filename": filename, "media_type": mtype})
+    dest = LIBRARY_DIR / filename
+    # Lê o conteúdo antes de salvar para garantir que não está vazio
+    content = f.read()
+    print(f"[library_upload] filename={filename} content_len={len(content)} dest={dest}")
+    with open(str(dest), "wb") as fh:
+        fh.write(content)
+    saved_size = dest.stat().st_size
+    print(f"[library_upload] saved_size={saved_size}")
+    return jsonify({"ok": True, "filename": filename, "media_type": mtype, "size": saved_size})
 
 @app.route("/api/library/<filename>", methods=["DELETE"])
 def api_library_delete(filename):

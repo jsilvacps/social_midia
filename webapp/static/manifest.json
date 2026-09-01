@@ -1,11 +1,11 @@
 {
-  "name": "PedeJá Prospector",
-  "short_name": "PedeJá Pro",
-  "description": "Busque estabelecimentos e prospecte via WhatsApp",
+  "name": "ZapShot",
+  "short_name": "ZapShot",
+  "description": "Envie. Alcance. Conecte. — Disparador para WhatsApp e Instagram",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#070D1F",
-  "theme_color": "#2563EB",
+  "theme_color": "#3b82f6",
   "orientation": "portrait",
   "icons": [
     { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },

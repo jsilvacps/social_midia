@@ -469,10 +469,26 @@ def api_library_upload():
         mtype = "video"
     else:
         return jsonify({"ok": False, "error": "Formato não suportado"})
-    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
+    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg" if mtype == "image" else f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
     dest = LIBRARY_DIR / filename
-    # Lê o conteúdo antes de salvar para garantir que não está vazio
-    content = f.read()
+    if mtype == "image":
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(f)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            # Redimensiona se maior que 1200px em qualquer dimensão
+            img.thumbnail((1200, 1200), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=75, optimize=True)
+            content = buf.getvalue()
+        except Exception as e:
+            print(f"[library_upload] compressão falhou: {e}, salvando original")
+            f.seek(0)
+            content = f.read()
+    else:
+        content = f.read()
     print(f"[library_upload] filename={filename} content_len={len(content)} dest={dest}")
     with open(str(dest), "wb") as fh:
         fh.write(content)

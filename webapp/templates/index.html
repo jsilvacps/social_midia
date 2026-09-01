@@ -432,6 +432,16 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </button>
         </div>
       </div>
+      <div class="field" style="margin-top:10px">
+        <label>🔁 Repetir por</label>
+        <select id="repeat-days">
+          <option value="1">Apenas este dia</option>
+          <option value="7">7 dias seguintes</option>
+          <option value="14">14 dias seguintes</option>
+          <option value="21">21 dias seguintes</option>
+          <option value="30">30 dias seguintes</option>
+        </select>
+      </div>
     </div>
 
     <!-- Submit -->
@@ -835,6 +845,8 @@ async function agendarPost() {
   const dt = document.getElementById("schedule-dt").value;
   if(!dt) { toast("⚠️ Defina o horário de envio"); return; }
 
+  const repeatDays = parseInt(document.getElementById("repeat-days").value) || 1;
+
   const btn = document.getElementById("btn-agendar");
   btn.disabled = true;
   btn.textContent = "⏳ Agendando…";
@@ -852,15 +864,19 @@ async function agendarPost() {
       ig_stories:  dests["ig-stories"],
       ig_reels:    dests["ig-reels"],
       scheduled_at: dt,
+      repeat_days: repeatDays,
     }),
   }).then(r=>r.json());
 
   btn.disabled = false;
-  btn.textContent = "📅 Agendar Publicação";
+  btn.textContent = "📅 Agendar";
 
   if(!resp.ok) { toast("❌ " + resp.error); return; }
 
-  toast("✅ Publicação agendada!");
+  const msg = repeatDays > 1
+    ? `✅ ${resp.count} envios agendados para ${repeatDays} dias!`
+    : "✅ Publicação agendada!";
+  toast(msg);
   clearFile();
   document.getElementById("caption").value = "";
   setDefaultDateTime();

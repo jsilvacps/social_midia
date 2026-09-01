@@ -153,11 +153,11 @@ def _media_url(filename: str, cfg) -> str:
         return f"{app_url}/api/library/file/{lib_filename}"
     return f"{app_url}/api/media/{filename}"
 
-def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[bool, str]:
+def wa_send_image(group_id: str, caption: str, filepath: Path, cfg, db_filename: str = "") -> tuple[bool, str]:
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        url = _media_url(filepath.name, cfg)
+        url = _media_url(db_filename or filepath.name, cfg)
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
@@ -171,11 +171,11 @@ def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
     except Exception as exc:
         return False, str(exc)
 
-def wa_send_video(group_id: str, caption: str, filepath: Path, cfg) -> tuple[bool, str]:
+def wa_send_video(group_id: str, caption: str, filepath: Path, cfg, db_filename: str = "") -> tuple[bool, str]:
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        url = _media_url(filepath.name, cfg)
+        url = _media_url(db_filename or filepath.name, cfg)
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
@@ -189,10 +189,10 @@ def wa_send_video(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
     except Exception as exc:
         return False, str(exc)
 
-def wa_send(group_id: str, caption: str, filepath: Path, media_type: str, cfg) -> tuple[bool, str]:
+def wa_send(group_id: str, caption: str, filepath: Path, media_type: str, cfg, db_filename: str = "") -> tuple[bool, str]:
     if media_type == "video":
-        return wa_send_video(group_id, caption, filepath, cfg)
-    return wa_send_image(group_id, caption, filepath, cfg)
+        return wa_send_video(group_id, caption, filepath, cfg, db_filename)
+    return wa_send_image(group_id, caption, filepath, cfg, db_filename)
 
 # ── Instagram Graph API ────────────────────────────────────────────────────────
 IG_BASE = "https://graph.instagram.com/v21.0"
@@ -327,7 +327,7 @@ def process_post(post_id: int):
         result["wa"][name] = "⏳ enviando..."
         _save_partial()
         print(f"[post {post_id}] Enviando para {name} ({i+1}/{len(wa_groups)})")
-        ok, err = wa_send(gid, caption, filepath, media_type, cfg)
+        ok, err = wa_send(gid, caption, filepath, media_type, cfg, db_filename=filename)
         result["wa"][name] = "ok" if ok else err
         _save_partial()
         if not ok:

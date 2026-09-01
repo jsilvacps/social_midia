@@ -129,7 +129,7 @@ def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
                   "mimetype": mimetype, "caption": caption, "media": b64},
-            timeout=60
+            timeout=180
         )
         if r.status_code in (200, 201):
             return True, ""
@@ -148,7 +148,7 @@ def wa_send_video(group_id: str, caption: str, filepath: Path, cfg) -> tuple[boo
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "video",
                   "mimetype": "video/mp4", "caption": caption, "media": b64},
-            timeout=120
+            timeout=300
         )
         if r.status_code in (200, 201):
             return True, ""

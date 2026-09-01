@@ -432,16 +432,30 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </button>
         </div>
       </div>
-      <div class="field" style="margin-top:10px">
-        <label>🔁 Repetir por</label>
-        <select id="repeat-days">
-          <option value="1">Apenas este dia</option>
-          <option value="7">7 dias seguintes</option>
-          <option value="14">14 dias seguintes</option>
-          <option value="21">21 dias seguintes</option>
-          <option value="30">30 dias seguintes</option>
-        </select>
+      <div class="row-2" style="margin-top:10px">
+        <div class="field">
+          <label>🔁 Repetir por</label>
+          <select id="repeat-days">
+            <option value="1">Apenas este dia</option>
+            <option value="7">7 dias seguintes</option>
+            <option value="14">14 dias seguintes</option>
+            <option value="21">21 dias seguintes</option>
+            <option value="30">30 dias seguintes</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>⚡ Disparos por dia</label>
+          <select id="times-per-day">
+            <option value="1">1x por dia</option>
+            <option value="2">2x por dia (12h)</option>
+            <option value="3">3x por dia (8h)</option>
+            <option value="4">4x por dia (6h)</option>
+            <option value="6">6x por dia (4h)</option>
+            <option value="8">8x por dia (3h)</option>
+          </select>
+        </div>
       </div>
+      <div id="schedule-summary" style="margin-top:8px;font-size:12px;color:var(--muted);display:none"></div>
     </div>
 
     <!-- Submit -->
@@ -576,6 +590,9 @@ let postStream   = null;
 // ══ Init ═════════════════════════════════════════════════
 async function init() {
   setDefaultDateTime();
+  document.getElementById("schedule-dt").addEventListener("change", updateScheduleSummary);
+  document.getElementById("repeat-days").addEventListener("change", updateScheduleSummary);
+  document.getElementById("times-per-day").addEventListener("change", updateScheduleSummary);
   const cfg = await fetch("/api/config").then(r=>r.json());
   if(cfg.evo_url)      document.getElementById("evo-url").value      = cfg.evo_url;
   if(cfg.evo_token)    document.getElementById("evo-token").value    = cfg.evo_token;
@@ -604,6 +621,28 @@ function localISOString(d) {
 function setNow() {
   const d = new Date();
   document.getElementById("schedule-dt").value = localISOString(d);
+  updateScheduleSummary();
+}
+
+function updateScheduleSummary() {
+  const el = document.getElementById("schedule-summary");
+  const dtVal = document.getElementById("schedule-dt").value;
+  const days  = parseInt(document.getElementById("repeat-days").value) || 1;
+  const times = parseInt(document.getElementById("times-per-day").value) || 1;
+  if(!dtVal || (days === 1 && times === 1)) { el.style.display="none"; return; }
+
+  const base = new Date(dtVal);
+  const intervalH = 24 / times;
+  const total = days * times;
+  // Mostra os primeiros horários
+  const previews = [];
+  for(let i = 0; i < Math.min(total, 6); i++) {
+    const d = new Date(base.getTime() + i * intervalH * 3600000);
+    previews.push(d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}));
+  }
+  const more = total > 6 ? ` ... +${total-6} mais` : "";
+  el.style.display = "block";
+  el.innerHTML = `📋 <strong>${total} disparos</strong>: ${previews.join(" · ")}${more}`;
 }
 
 // ══ Tab ══════════════════════════════════════════════════
@@ -845,7 +884,8 @@ async function agendarPost() {
   const dt = document.getElementById("schedule-dt").value;
   if(!dt) { toast("⚠️ Defina o horário de envio"); return; }
 
-  const repeatDays = parseInt(document.getElementById("repeat-days").value) || 1;
+  const repeatDays   = parseInt(document.getElementById("repeat-days").value) || 1;
+  const timesPerDay  = parseInt(document.getElementById("times-per-day").value) || 1;
 
   const btn = document.getElementById("btn-agendar");
   btn.disabled = true;
@@ -855,16 +895,17 @@ async function agendarPost() {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
-      filename:    uploadedFile.filename || "",
-      library:     uploadedFile.library || "",
-      media_type:  uploadedFile.media_type,
-      caption:     document.getElementById("caption").value.trim(),
-      wa_groups:   dests.wa ? selGroups : [],
-      ig_feed:     dests["ig-feed"],
-      ig_stories:  dests["ig-stories"],
-      ig_reels:    dests["ig-reels"],
+      filename:     uploadedFile.filename || "",
+      library:      uploadedFile.library || "",
+      media_type:   uploadedFile.media_type,
+      caption:      document.getElementById("caption").value.trim(),
+      wa_groups:    dests.wa ? selGroups : [],
+      ig_feed:      dests["ig-feed"],
+      ig_stories:   dests["ig-stories"],
+      ig_reels:     dests["ig-reels"],
       scheduled_at: dt,
-      repeat_days: repeatDays,
+      repeat_days:  repeatDays,
+      times_per_day: timesPerDay,
     }),
   }).then(r=>r.json());
 
@@ -873,8 +914,9 @@ async function agendarPost() {
 
   if(!resp.ok) { toast("❌ " + resp.error); return; }
 
-  const msg = repeatDays > 1
-    ? `✅ ${resp.count} envios agendados para ${repeatDays} dias!`
+  const total = resp.count;
+  const msg = total > 1
+    ? `✅ ${total} disparos agendados! (${repeatDays}d × ${timesPerDay}x/dia)`
     : "✅ Publicação agendada!";
   toast(msg);
   clearFile();

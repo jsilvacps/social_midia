@@ -591,8 +591,8 @@ def api_create_post():
     if not scheduled_at:
         return jsonify({"ok": False, "error": "Defina o horário de envio"})
 
-    repeat_days = int(data.get("repeat_days", 1) or 1)
-    repeat_days = max(1, min(repeat_days, 30))  # clamp 1-30
+    repeat_days   = max(1, min(int(data.get("repeat_days",   1) or 1), 30))
+    times_per_day = max(1, min(int(data.get("times_per_day", 1) or 1), 24))
 
     conn = db()
     created_at = datetime.now().isoformat(timespec="seconds")
@@ -606,20 +606,25 @@ def api_create_post():
         conn.close()
         return jsonify({"ok": False, "error": "Horário inválido"})
 
+    # intervalo entre disparos em minutos
+    interval_minutes = int(24 * 60 / times_per_day)
+    total = repeat_days * times_per_day
+
     first_id = None
-    for day_offset in range(repeat_days):
-        sched = (base_dt + timedelta(days=day_offset)).isoformat(timespec="minutes")
+    for i in range(total):
+        sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         cur = conn.execute("""INSERT INTO posts
             (caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,
              scheduled_at,status,created_at)
             VALUES (?,?,?,?,?,?,?,?,'pending',?)""",
             (caption, filename, media_type, wa_groups_json,
              ig_feed, ig_stories, ig_reels, sched, created_at))
-        if day_offset == 0:
+        if i == 0:
             first_id = cur.lastrowid
 
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "id": first_id, "count": repeat_days})
+    print(f"[create_post] total={total} repeat_days={repeat_days} times_per_day={times_per_day} interval={interval_minutes}min")
+    return jsonify({"ok": True, "id": first_id, "count": total})
 
 @app.route("/api/posts/<int:post_id>/send", methods=["POST"])
 def api_send_now(post_id):

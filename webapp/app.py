@@ -163,7 +163,7 @@ def wa_send_image(group_id: str, caption: str, filepath: Path, cfg, db_filename:
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
                   "mimetype": "image/jpeg", "caption": caption, "media": url},
-            timeout=30
+            timeout=120
         )
         if r.status_code in (200, 201):
             return True, ""
@@ -181,7 +181,7 @@ def wa_send_video(group_id: str, caption: str, filepath: Path, cfg, db_filename:
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "video",
                   "mimetype": "video/mp4", "caption": caption, "media": url},
-            timeout=60
+            timeout=180
         )
         if r.status_code in (200, 201):
             return True, ""

@@ -359,6 +359,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     <div class="card">
       <p class="card-title">✏️ Legenda / Texto</p>
       <div class="field">
+        <label>Título do lote <span style="opacity:.5;font-weight:400">(para identificar na lista de posts)</span></label>
+        <input type="text" id="batch-title" placeholder="Ex: Promoção de setembro, Campanha verão…">
+      </div>
+      <div class="field">
         <textarea id="caption" placeholder="Digite o texto que acompanha a publicação…"></textarea>
       </div>
     </div>
@@ -921,9 +925,10 @@ async function agendarPost() {
       ig_feed:      dests["ig-feed"],
       ig_stories:   dests["ig-stories"],
       ig_reels:     dests["ig-reels"],
-      scheduled_at: dt,
-      repeat_days:  repeatDays,
+      scheduled_at:  dt,
+      repeat_days:   repeatDays,
       times_per_day: timesPerDay,
+      batch_title:   document.getElementById("batch-title").value.trim(),
     }),
   }).then(r=>r.json());
 
@@ -939,6 +944,7 @@ async function agendarPost() {
   toast(msg);
   clearFile();
   document.getElementById("caption").value = "";
+  document.getElementById("batch-title").value = "";
   setDefaultDateTime();
 
   // Vai para a aba de posts
@@ -954,74 +960,142 @@ async function loadPosts() {
   const list  = document.getElementById("posts-list");
   const empty = document.getElementById("empty-posts");
   list.innerHTML = "";
-  empty.style.display = posts.length ? "none" : "flex";
-  posts.forEach(p => list.appendChild(buildPostCard(p)));
+  if(!posts.length){ empty.style.display="flex"; return; }
+  empty.style.display = "none";
+
+  // Agrupa por batch_id (posts sem batch ficam em grupos individuais)
+  const batches = new Map();
+  posts.forEach(p => {
+    const key = p.batch_id || `solo-${p.id}`;
+    if(!batches.has(key)) batches.set(key, []);
+    batches.get(key).push(p);
+  });
+
+  batches.forEach((bPosts, key) => {
+    list.appendChild(buildBatchCard(key, bPosts));
+  });
+
   if(posts.some(p=>["pending","sending"].includes(p.status))) startPostStream();
 }
 
-function buildPostCard(p) {
-  const el = document.createElement("div");
-  el.className = "post-card";
-  el.id = `post-${p.id}`;
+function batchSummaryStatus(posts) {
+  if(posts.some(p=>p.status==="sending"))  return {label:"📡 Enviando", cls:"s-sending"};
+  if(posts.every(p=>p.status==="sent"))    return {label:"✅ Enviados", cls:"s-sent"};
+  if(posts.some(p=>p.status==="failed"))   return {label:"❌ Com falha", cls:"s-failed"};
+  if(posts.some(p=>p.status==="partial"))  return {label:"⚠️ Parcial",  cls:"s-partial"};
+  return {label:"🕐 Agendado", cls:"s-pending"};
+}
 
-  const result = typeof p.result === "string" ? JSON.parse(p.result||"{}") : (p.result||{});
-  const waGroups = typeof p.wa_groups === "string" ? JSON.parse(p.wa_groups||"[]") : (p.wa_groups||[]);
+function buildBatchCard(batchKey, posts) {
+  const isSolo   = batchKey.startsWith("solo-");
+  const title    = posts[0].batch_title || posts[0].caption || "(sem título)";
+  const total    = posts.length;
+  const sent     = posts.filter(p=>p.status==="sent").length;
+  const next     = posts.find(p=>p.status==="pending");
+  const {label, cls} = batchSummaryStatus(posts);
+  const batchId  = posts[0].batch_id;
 
-  const statusMap = {pending:"🕐 Agendado",sending:"📡 Enviando",sent:"✅ Enviado",failed:"❌ Falhou",partial:"⚠️ Parcial"};
-  const classMap  = {pending:"s-pending",sending:"s-sending",sent:"s-sent",failed:"s-failed",partial:"s-partial"};
-  const statusLabel = (statusMap[p.status]||p.status) + (p.status==="sending"?"<span class='dot-anim'></span>":"");
+  const wrapper = document.createElement("div");
+  wrapper.className = "post-card";
+  wrapper.style.padding = "0";
+  wrapper.style.overflow = "hidden";
 
-  // Destinos tags
+  const waGroups = typeof posts[0].wa_groups === "string"
+    ? JSON.parse(posts[0].wa_groups||"[]") : (posts[0].wa_groups||[]);
   const tags = [];
-  if(waGroups.length) tags.push(`<span class="dest-tag tag-wa">💬 ${waGroups.length} grupo${waGroups.length!==1?"s":""}</span>`);
-  if(p.ig_feed)    tags.push(`<span class="dest-tag tag-ig">📷 Feed</span>`);
-  if(p.ig_stories) tags.push(`<span class="dest-tag tag-ig">⭕ Stories</span>`);
-  if(p.ig_reels)   tags.push(`<span class="dest-tag tag-ig">🎬 Reels</span>`);
+  if(waGroups.length) tags.push(`<span class="dest-tag tag-wa">💬 ${waGroups.length}g</span>`);
+  if(posts[0].ig_feed)    tags.push(`<span class="dest-tag tag-ig">📷</span>`);
+  if(posts[0].ig_stories) tags.push(`<span class="dest-tag tag-ig">⭕</span>`);
+  if(posts[0].ig_reels)   tags.push(`<span class="dest-tag tag-ig">🎬</span>`);
 
-  // Resultado detalhado
+  const uid = `batch-${batchKey.replace(/[^a-z0-9]/gi,"-")}`;
+
+  wrapper.innerHTML = `
+    <div class="post-card-body" onclick="toggleBatch('${uid}')" style="cursor:pointer;user-select:none">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="${uid}-arrow" style="font-size:12px;transition:.2s;flex-shrink:0">▶</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+            <strong style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</strong>
+            <span class="post-status ${cls}" style="flex-shrink:0;font-size:10px">${label}</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:8px">
+            <span>📦 ${total} disparo${total!==1?"s":""} · ✅ ${sent}/${total}</span>
+            ${tags.join("")}
+          </div>
+          ${next?`<div style="font-size:11px;color:var(--muted);margin-top:2px">⏭ Próximo: ${next.scheduled_at.replace("T"," ")}</div>`:""}
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;padding:0 14px 10px;justify-content:flex-end">
+      ${!isSolo && batchId ? `<button class="btn btn-danger btn-sm" onclick="deleteBatch('${batchId}')">🗑 Excluir lote</button>` : ""}
+    </div>
+    <div id="${uid}-body" style="display:none;border-top:1px solid var(--border)">
+      ${posts.map(p => buildPostCardInner(p)).join("")}
+    </div>`;
+
+  return wrapper;
+}
+
+function toggleBatch(uid) {
+  const body  = document.getElementById(`${uid}-body`);
+  const arrow = document.getElementById(`${uid}-arrow`);
+  const open  = body.style.display !== "none";
+  body.style.display  = open ? "none" : "block";
+  arrow.style.transform = open ? "" : "rotate(90deg)";
+}
+
+function buildPostCardInner(p) {
+  const result   = typeof p.result === "string" ? JSON.parse(p.result||"{}") : (p.result||{});
+  const statusMap = {pending:"🕐",sending:"📡",sent:"✅",failed:"❌",partial:"⚠️"};
+  const classMap  = {pending:"s-pending",sending:"s-sending",sent:"s-sent",failed:"s-failed",partial:"s-partial"};
+
   let resultHtml = "";
   if(p.status !== "pending" && (Object.keys(result.wa||{}).length || Object.keys(result.ig||{}).length)) {
     const lines = [];
     Object.entries(result.wa||{}).forEach(([k,v])=>lines.push(`💬 ${esc(k)}: ${v==="ok"?"✅":"❌ "+esc(v)}`));
     Object.entries(result.ig||{}).forEach(([k,v])=>lines.push(`📸 ${k}: ${v==="ok"?"✅":"❌ "+esc(v)}`));
-    resultHtml = `<div class="result-detail">${lines.join("<br>")}</div>`;
+    resultHtml = `<div class="result-detail" style="margin-top:4px">${lines.join("<br>")}</div>`;
   }
 
-  el.innerHTML = `
-    <div class="post-card-body">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span class="post-status ${classMap[p.status]||"s-pending"}">${statusLabel}</span>
-        <span style="font-size:11px;color:var(--muted)">#${p.id}</span>
+  return `<div id="post-${p.id}" style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px">
+        <span class="post-status ${classMap[p.status]||"s-pending"}" style="font-size:10px">${statusMap[p.status]||"🕐"} ${p.status}</span>
+        <span style="color:var(--muted)">📅 ${(p.scheduled_at||"").replace("T"," ")}</span>
+        <span style="color:var(--muted)">#${p.id}</span>
       </div>
-      <div class="post-caption">${esc(p.caption||"(sem texto)")}</div>
-      <div class="post-time">📅 ${(p.scheduled_at||"").replace("T"," ")}${p.sent_at?" · Enviado "+p.sent_at.replace("T"," ").slice(0,16):""}</div>
-      <div class="post-dests">${tags.join("")}</div>
       ${resultHtml}
     </div>
-    <div class="post-actions">
+    <div style="display:flex;gap:4px;flex-shrink:0">
       ${p.status==="pending"||p.status==="failed"||p.status==="partial"
-        ? `<button class="btn btn-success btn-sm" onclick="sendNow(${p.id},this)">⚡ Enviar agora</button>`
+        ? `<button class="btn btn-success btn-sm" style="font-size:11px;padding:4px 8px" onclick="sendNow(${p.id},this)">⚡</button>`
         : ""}
-      <button class="btn btn-danger btn-sm" onclick="deletePost(${p.id})">🗑</button>
-    </div>`;
-  return el;
+      <button class="btn btn-danger btn-sm" style="font-size:11px;padding:4px 8px" onclick="deletePost(${p.id})">🗑</button>
+    </div>
+  </div>`;
 }
 
 async function sendNow(id, btn) {
-  btn.disabled = true; btn.textContent = "📡 Enviando…";
+  btn.disabled = true; btn.textContent = "📡";
   const resp = await fetch(`/api/posts/${id}/send`, {method:"POST"}).then(r=>r.json());
-  if(!resp.ok) { toast("❌ " + resp.error); btn.disabled=false; btn.textContent="⚡ Enviar agora"; return; }
+  if(!resp.ok) { toast("❌ " + resp.error); btn.disabled=false; btn.textContent="⚡"; return; }
   toast("📡 Enviando…");
   startPostStream();
 }
 
 async function deletePost(id) {
-  if(!confirm("Remover esta publicação?")) return;
+  if(!confirm("Remover este disparo?")) return;
   await fetch(`/api/posts/${id}`, {method:"DELETE"});
   document.getElementById(`post-${id}`)?.remove();
-  const list = document.getElementById("posts-list");
-  if(!list.children.length) document.getElementById("empty-posts").style.display = "flex";
   toast("🗑 Removido");
+}
+
+async function deleteBatch(batchId) {
+  if(!confirm("Excluir TODOS os disparos deste lote?")) return;
+  await fetch(`/api/posts/batch/${batchId}`, {method:"DELETE"});
+  toast("🗑 Lote removido");
+  loadPosts();
 }
 
 // ══ SSE Stream ═══════════════════════════════════════════

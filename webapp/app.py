@@ -86,8 +86,16 @@ def init_db():
         status      TEXT    DEFAULT 'pending',
         created_at  TEXT,
         sent_at     TEXT,
-        result      TEXT    DEFAULT '{}'
+        result      TEXT    DEFAULT '{}',
+        batch_id    TEXT    DEFAULT '',
+        batch_title TEXT    DEFAULT ''
     )""")
+    # migração: adiciona colunas se não existirem
+    for col, defval in [("batch_id","''"), ("batch_title","''")]:
+        try:
+            conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
+        except Exception:
+            pass
     conn.commit(); conn.close()
 
 def db():
@@ -593,12 +601,13 @@ def api_create_post():
 
     repeat_days   = max(1, min(int(data.get("repeat_days",   1) or 1), 30))
     times_per_day = max(1, min(int(data.get("times_per_day", 1) or 1), 24))
+    batch_title   = data.get("batch_title", "").strip()
 
     conn = db()
     created_at = datetime.now().isoformat(timespec="seconds")
     wa_groups_json = json.dumps(wa_groups)
+    batch_id = str(uuid.uuid4())
 
-    # Parse base datetime (format: "2025-01-15T09:00")
     from datetime import timedelta
     try:
         base_dt = datetime.fromisoformat(scheduled_at)
@@ -606,7 +615,6 @@ def api_create_post():
         conn.close()
         return jsonify({"ok": False, "error": "Horário inválido"})
 
-    # intervalo entre disparos em minutos
     interval_minutes = int(24 * 60 / times_per_day)
     total = repeat_days * times_per_day
 
@@ -615,16 +623,16 @@ def api_create_post():
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         cur = conn.execute("""INSERT INTO posts
             (caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,
-             scheduled_at,status,created_at)
-            VALUES (?,?,?,?,?,?,?,?,'pending',?)""",
+             scheduled_at,status,created_at,batch_id,batch_title)
+            VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?)""",
             (caption, filename, media_type, wa_groups_json,
-             ig_feed, ig_stories, ig_reels, sched, created_at))
+             ig_feed, ig_stories, ig_reels, sched, created_at, batch_id, batch_title))
         if i == 0:
             first_id = cur.lastrowid
 
     conn.commit(); conn.close()
-    print(f"[create_post] total={total} repeat_days={repeat_days} times_per_day={times_per_day} interval={interval_minutes}min")
-    return jsonify({"ok": True, "id": first_id, "count": total})
+    print(f"[create_post] total={total} batch_id={batch_id} batch_title={batch_title!r}")
+    return jsonify({"ok": True, "id": first_id, "count": total, "batch_id": batch_id})
 
 @app.route("/api/posts/<int:post_id>/send", methods=["POST"])
 def api_send_now(post_id):
@@ -649,6 +657,13 @@ def api_delete_post(post_id):
         except Exception:
             pass
     conn.execute("DELETE FROM posts WHERE id=?", (post_id,))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/posts/batch/<batch_id>", methods=["DELETE"])
+def api_delete_batch(batch_id):
+    conn = db()
+    conn.execute("DELETE FROM posts WHERE batch_id=?", (batch_id,))
     conn.commit(); conn.close()
     return jsonify({"ok": True})
 

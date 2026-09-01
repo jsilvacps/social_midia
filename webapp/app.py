@@ -143,6 +143,13 @@ def _compress_image_b64(filepath: Path, max_kb: int = 400) -> tuple[str, str]:
     b64 = base64.b64encode(buf.getvalue()).decode()
     return b64, "image/jpeg"
 
+def _media_url(filename: str, cfg) -> str:
+    """URL pública do arquivo para a Evolution API buscar diretamente."""
+    app_url = cfg.get("app_url", "").rstrip("/")
+    if not app_url:
+        app_url = "https://social-midia.onrender.com"
+    return f"{app_url}/api/media/{filename}"
+
 def wa_send_image(group_id: str, caption: str, filepath: Path, cfg) -> tuple[bool, str]:
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")

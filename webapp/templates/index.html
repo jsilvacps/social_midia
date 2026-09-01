@@ -288,6 +288,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
             <input type="search" id="group-search" placeholder="Filtrar grupos…"
                    oninput="filterGroups(this.value)" autocomplete="off">
           </div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <button class="btn btn-secondary btn-sm" onclick="selectAllGroups()" style="flex:1;font-size:12px">✅ Todos</button>
+            <button class="btn btn-secondary btn-sm" onclick="deselectAllGroups()" style="flex:1;font-size:12px">❌ Nenhum</button>
+          </div>
           <div class="group-list" id="group-list">
             <div class="empty" style="padding:20px">
               <p>Carregando grupos…</p>
@@ -631,6 +635,22 @@ function renderGroups(groups) {
 function filterGroups(q) {
   const filtered = q ? allGroups.filter(g=>g.name.toLowerCase().includes(q.toLowerCase())) : allGroups;
   renderGroups(filtered);
+}
+
+function selectAllGroups() {
+  selGroups = allGroups.map(g => ({id: g.id, name: g.name}));
+  const q = document.getElementById("group-search").value;
+  filterGroups(q);
+  const sub = document.getElementById("dest-wa-sub");
+  sub.textContent = `${selGroups.length} grupos selecionados`;
+}
+
+function deselectAllGroups() {
+  selGroups = [];
+  const q = document.getElementById("group-search").value;
+  filterGroups(q);
+  const sub = document.getElementById("dest-wa-sub");
+  sub.textContent = "Nenhum grupo selecionado";
 }
 
 function toggleGroup(id, name) {

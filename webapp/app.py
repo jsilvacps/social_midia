@@ -510,7 +510,8 @@ def api_create_post():
 
     # Suporte a arquivo da biblioteca
     library = data.get("library", "")
-    if library and not filename:
+    print(f"[create_post] filename={filename!r} library={library!r}")
+    if library:
         filename = f"__lib__{library}"
 
     if not filename:

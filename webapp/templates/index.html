@@ -616,9 +616,33 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <label>Tema / Segmento</label>
         <input type="text" id="grupos-tema" placeholder="Ex: vendas, imóveis, pet shop…">
       </div>
-      <div class="field">
-        <label>Localidade</label>
-        <input type="text" id="grupos-local" placeholder="Ex: Campinas SP, Passos MG…">
+      <div class="row-2">
+        <div class="field">
+          <label>Estado</label>
+          <select id="grupos-estado" onchange="loadCidades(this.value)">
+            <option value="">— Selecione —</option>
+            <option value="AC">Acre</option><option value="AL">Alagoas</option>
+            <option value="AP">Amapá</option><option value="AM">Amazonas</option>
+            <option value="BA">Bahia</option><option value="CE">Ceará</option>
+            <option value="DF">Distrito Federal</option><option value="ES">Espírito Santo</option>
+            <option value="GO">Goiás</option><option value="MA">Maranhão</option>
+            <option value="MT">Mato Grosso</option><option value="MS">Mato Grosso do Sul</option>
+            <option value="MG">Minas Gerais</option><option value="PA">Pará</option>
+            <option value="PB">Paraíba</option><option value="PR">Paraná</option>
+            <option value="PE">Pernambuco</option><option value="PI">Piauí</option>
+            <option value="RJ">Rio de Janeiro</option><option value="RN">Rio Grande do Norte</option>
+            <option value="RS">Rio Grande do Sul</option><option value="RO">Rondônia</option>
+            <option value="RR">Roraima</option><option value="SC">Santa Catarina</option>
+            <option value="SP">São Paulo</option><option value="SE">Sergipe</option>
+            <option value="TO">Tocantins</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Cidade</label>
+          <select id="grupos-cidade" disabled>
+            <option value="">— Selecione o estado —</option>
+          </select>
+        </div>
       </div>
       <button class="btn btn-primary" onclick="buscarGrupos()" id="btn-buscar-grupos" style="width:100%;margin-top:4px">
         🔍 Buscar Grupos
@@ -1153,9 +1177,28 @@ async function sendNow(id, btn) {
 }
 
 // ══ Busca de Grupos ══════════════════════════════════════
+async function loadCidades(uf) {
+  const sel = document.getElementById("grupos-cidade");
+  sel.innerHTML = "<option value=''>Carregando…</option>";
+  sel.disabled = true;
+  if(!uf) { sel.innerHTML = "<option value=''>— Selecione o estado —</option>"; return; }
+  try {
+    const cidades = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`).then(r=>r.json());
+    sel.innerHTML = "<option value=''>— Todas as cidades —</option>" +
+      cidades.map(c=>`<option value="${c.nome}">${c.nome}</option>`).join("");
+    sel.disabled = false;
+  } catch(e) {
+    sel.innerHTML = "<option value=''>Erro ao carregar</option>";
+  }
+}
+
 async function buscarGrupos() {
-  const tema  = document.getElementById("grupos-tema").value.trim();
-  const local = document.getElementById("grupos-local").value.trim();
+  const tema   = document.getElementById("grupos-tema").value.trim();
+  const estado = document.getElementById("grupos-estado");
+  const cidade = document.getElementById("grupos-cidade").value;
+  const uf     = estado.value;
+  const estadoNome = estado.options[estado.selectedIndex]?.text || "";
+  const local  = cidade ? `${cidade} ${uf}` : (uf ? estadoNome : "");
   if(!tema && !local) { toast("⚠️ Preencha o tema ou localidade"); return; }
 
   const btn = document.getElementById("btn-buscar-grupos");

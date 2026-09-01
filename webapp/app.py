@@ -475,7 +475,10 @@ def api_library_file(filename):
     ext = path.suffix.lower()
     mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
                 ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
-    return send_file(str(path), mimetype=mime_map.get(ext, "application/octet-stream"), conditional=False)
+    mimetype = mime_map.get(ext, "application/octet-stream")
+    with open(str(path), "rb") as f:
+        data = f.read()
+    return Response(data, mimetype=mimetype, headers={"Content-Length": str(len(data))})
 
 # ── Groups ─────────────────────────────────────────────────────────────────────
 @app.route("/api/wa/groups")

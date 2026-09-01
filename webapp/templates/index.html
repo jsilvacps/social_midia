@@ -1251,6 +1251,15 @@ function startPostStream() {
 }
 
 // ══ Config ═══════════════════════════════════════════════
+async function saveConfig() {
+  await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      google_api_key: document.getElementById("google-api-key").value.trim(),
+      google_cx:      document.getElementById("google-cx").value.trim(),
+    })});
+  toast("✅ Configuração salva!");
+}
+
 async function saveEvo() {
   await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({

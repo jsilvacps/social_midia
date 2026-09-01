@@ -429,6 +429,16 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           <div class="dest-check" id="check-ig-reels">✓</div>
         </div>
 
+        <!-- WA Status -->
+        <div class="dest-item" id="dest-wa-status" onclick="toggleDest('wa-status')">
+          <span class="dest-ico">🟢</span>
+          <div class="dest-body">
+            <div class="dest-name">WhatsApp Status</div>
+            <div class="dest-sub">Publica no Status (Stories WA)</div>
+          </div>
+          <div class="dest-check" id="check-wa-status">✓</div>
+        </div>
+
       </div>
     </div>
 
@@ -606,7 +616,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 let uploadedFile = { filename:"", media_type:"image" };
 let allGroups    = [];
 let selGroups    = [];  // [{id, name}]
-let dests        = { wa:false, "ig-feed":false, "ig-stories":false, "ig-reels":false };
+let dests        = { wa:false, "ig-feed":false, "ig-stories":false, "ig-reels":false, "wa-status":false };
 let postStream   = null;
 
 // ══ Init ═════════════════════════════════════════════════
@@ -771,8 +781,9 @@ function toggleDest(key) {
   if(el.classList.contains("disabled")) return;
 
   dests[key] = !dests[key];
-  const activeClass = key.startsWith("ig") ? "active-ig" :
-                      key === "wa"          ? "active-wa" : "active";
+  const activeClass = key.startsWith("ig")  ? "active-ig" :
+                      key === "wa"           ? "active-wa" :
+                      key === "wa-status"    ? "active-wa" : "active";
   el.classList.toggle(activeClass, dests[key]);
   document.getElementById("check-"+key).textContent = dests[key] ? "✓" : "";
 
@@ -850,7 +861,7 @@ function toggleGroup(id, name) {
 // ══ Create Post ══════════════════════════════════════════
 async function enviarAgora() {
   if(!uploadedFile.filename && !uploadedFile.library) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
-  if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"])
+  if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"] && !dests["wa-status"])
     { toast("⚠️ Selecione ao menos um destino"); return; }
   if(dests.wa && selGroups.length === 0) { toast("⚠️ Selecione ao menos um grupo"); return; }
 
@@ -875,6 +886,7 @@ async function enviarAgora() {
       ig_feed:     dests["ig-feed"],
       ig_stories:  dests["ig-stories"],
       ig_reels:    dests["ig-reels"],
+      wa_status:   dests["wa-status"],
       scheduled_at: dt,
     }),
   }).then(r=>r.json());
@@ -899,7 +911,7 @@ async function enviarAgora() {
 
 async function agendarPost() {
   if(!uploadedFile.filename && !uploadedFile.library) { toast("⚠️ Selecione uma imagem ou vídeo"); return; }
-  if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"])
+  if(!dests.wa && !dests["ig-feed"] && !dests["ig-stories"] && !dests["ig-reels"] && !dests["wa-status"])
     { toast("⚠️ Selecione ao menos um destino"); return; }
   if(dests.wa && selGroups.length === 0) { toast("⚠️ Selecione ao menos um grupo"); return; }
 

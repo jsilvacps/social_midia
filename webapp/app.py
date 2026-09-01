@@ -82,6 +82,7 @@ def init_db():
         ig_feed     INTEGER DEFAULT 0,
         ig_stories  INTEGER DEFAULT 0,
         ig_reels    INTEGER DEFAULT 0,
+        wa_status   INTEGER DEFAULT 0,
         scheduled_at TEXT,
         status      TEXT    DEFAULT 'pending',
         created_at  TEXT,
@@ -91,7 +92,7 @@ def init_db():
         batch_title TEXT    DEFAULT ''
     )""")
     # migração: adiciona colunas se não existirem
-    for col, defval in [("batch_id","''"), ("batch_title","''")]:
+    for col, defval in [("batch_id","''"), ("batch_title","''"), ("wa_status","0")]:
         try:
             conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
         except Exception:
@@ -219,6 +220,38 @@ def wa_send(group_id: str, caption: str, filepath: Path, media_type: str, cfg, d
         return wa_send_video(group_id, caption, filepath, cfg, db_filename)
     return wa_send_image(group_id, caption, filepath, cfg, db_filename)
 
+def wa_send_status(caption: str, filepath: Path, media_type: str, cfg, db_filename: str = "") -> tuple[bool, str]:
+    """Publica no WhatsApp Status (Stories). Vai para todos os contatos."""
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    app_url  = cfg.get("app_url", "").rstrip("/")
+
+    if db_filename:
+        media_url = f"{app_url}/api/library/file/{db_filename}"
+    else:
+        media_url = f"{app_url}/api/media/{filepath.name}"
+
+    stype = "video" if media_type == "video" else "image"
+    body = {
+        "type":        stype,
+        "content":     media_url,
+        "caption":     caption,
+        "allContacts": True,
+    }
+    try:
+        r = requests.post(
+            f"{base}/message/sendStatus/{instance}",
+            headers=_evo_headers(cfg),
+            json=body,
+            timeout=120
+        )
+        print(f"[sendStatus] status={r.status_code} body={r.text[:200]}")
+        if r.status_code in (200, 201):
+            return True, ""
+        return False, f"HTTP {r.status_code}: {r.text[:300]}"
+    except Exception as exc:
+        return False, str(exc)
+
 # ── Instagram Graph API ────────────────────────────────────────────────────────
 IG_BASE = "https://graph.instagram.com/v21.0"
 
@@ -328,6 +361,7 @@ def process_post(post_id: int):
     ig_feed    = bool(row["ig_feed"])
     ig_stories = bool(row["ig_stories"])
     ig_reels   = bool(row["ig_reels"])
+    wa_status  = bool(row["wa_status"]) if "wa_status" in row.keys() else False
     # Suporte a arquivo da biblioteca
     if filename.startswith("__lib__"):
         lib_filename = filename[len("__lib__"):]
@@ -379,6 +413,12 @@ def process_post(post_id: int):
         ok, err = ig_post(media_url, caption, "reels", cfg, is_video)
         result["ig"]["reels"] = "ok" if ok else err
         if not ok: errors.append(f"IG Reels: {err}")
+
+    # WhatsApp Status
+    if wa_status:
+        ok, err = wa_send_status(caption, filepath, media_type, cfg, db_filename=lib_filename if filename.startswith("__lib__") else "")
+        result.setdefault("wa_status", {})["status"] = "ok" if ok else err
+        if not ok: errors.append(f"WA Status: {err}")
 
     final_status = "partial" if errors and (result["wa"] or result["ig"]) else \
                    "failed"  if errors else "sent"
@@ -584,6 +624,7 @@ def api_create_post():
     ig_feed    = int(bool(data.get("ig_feed")))
     ig_stories = int(bool(data.get("ig_stories")))
     ig_reels   = int(bool(data.get("ig_reels")))
+    wa_status  = int(bool(data.get("wa_status")))
     scheduled_at = data.get("scheduled_at", "")
 
     # Suporte a arquivo da biblioteca
@@ -594,7 +635,7 @@ def api_create_post():
 
     if not filename:
         return jsonify({"ok": False, "error": "Nenhum arquivo selecionado"})
-    if not wa_groups and not ig_feed and not ig_stories and not ig_reels:
+    if not wa_groups and not ig_feed and not ig_stories and not ig_reels and not wa_status:
         return jsonify({"ok": False, "error": "Selecione ao menos um destino"})
     if not scheduled_at:
         return jsonify({"ok": False, "error": "Defina o horário de envio"})
@@ -622,11 +663,11 @@ def api_create_post():
     for i in range(total):
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         cur = conn.execute("""INSERT INTO posts
-            (caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,
+            (caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
              scheduled_at,status,created_at,batch_id,batch_title)
-            VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?)""",
+            VALUES (?,?,?,?,?,?,?,?,?,'pending',?,?,?)""",
             (caption, filename, media_type, wa_groups_json,
-             ig_feed, ig_stories, ig_reels, sched, created_at, batch_id, batch_title))
+             ig_feed, ig_stories, ig_reels, wa_status, sched, created_at, batch_id, batch_title))
         if i == 0:
             first_id = cur.lastrowid
 

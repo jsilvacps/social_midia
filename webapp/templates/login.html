@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZapShot — Entrar</title>
+  <style>
+    :root {
+      --bg: #070D1F;
+      --card: #0f1829;
+      --border: #1e2d4a;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --accent: #3b82f6;
+      --green: #00e5a0;
+      --purple: #8b5cf6;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    /* Logo */
+    .logo-area {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .logo-area img {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      object-fit: contain;
+      margin-bottom: 12px;
+    }
+    .logo-area h1 {
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(90deg, #00e5a0, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .logo-area p {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 24px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .2s;
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* Form */
+    .form { display: flex; flex-direction: column; gap: 16px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .field input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .field input:focus { border-color: var(--accent); }
+
+    .btn {
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .2s;
+      margin-top: 4px;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: #fff;
+    }
+
+    .error-box {
+      background: rgba(239,68,68,.1);
+      border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px;
+      color: var(--danger);
+      font-size: 13px;
+      padding: 10px 12px;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .badge-trial  { background: rgba(59,130,246,.15); color: #3b82f6; }
+    .badge-active { background: rgba(0,229,160,.15);  color: #00e5a0; }
+
+    footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="logo-area">
+    <img src="/static/icons/zapshot-logo.png" alt="ZapShot">
+    <h1>ZapShot</h1>
+    <p>Envie. Alcance. Conecte.</p>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <button class="tab-btn {% if tab=='login' %}active{% endif %}" onclick="showTab('login')">Entrar</button>
+      <button class="tab-btn {% if tab=='register' %}active{% endif %}" onclick="showTab('register')">Criar conta</button>
+    </div>
+
+    {% if error %}
+    <div class="error-box" style="margin-bottom:16px">{{ error }}</div>
+    {% endif %}
+
+    <!-- Login -->
+    <div id="tab-login" class="form" style="{% if tab!='login' %}display:none{% endif %}">
+      <form method="POST" action="/login" class="form">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="email" placeholder="seu@email.com" required>
+        </div>
+        <div class="field">
+          <label>Senha</label>
+          <input type="password" name="password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn btn-primary">🚀 Entrar</button>
+      </form>
+    </div>
+
+    <!-- Register -->
+    <div id="tab-register" style="{% if tab!='register' %}display:none{% endif %}">
+      <form method="POST" action="/register" class="form">
+        <div class="field">
+          <label>Nome</label>
+          <input type="text" name="name" placeholder="Seu nome">
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="email" placeholder="seu@email.com" required>
+        </div>
+        <div class="field">
+          <label>Senha</label>
+          <input type="password" name="password" placeholder="Mínimo 6 caracteres" required>
+        </div>
+        <div class="field">
+          <label>Confirmar senha</label>
+          <input type="password" name="confirm" placeholder="Repita a senha" required>
+        </div>
+        <button type="submit" class="btn btn-primary">✅ Criar conta</button>
+      </form>
+    </div>
+  </div>
+
+  <footer>
+    Desenvolvido por <a href="https://www.umbrelatecnologia.com.br" target="_blank">Umbrela Tecnologia</a>
+  </footer>
+</div>
+
+<script>
+function showTab(name) {
+  document.getElementById("tab-login").style.display    = name === "login"    ? "" : "none";
+  document.getElementById("tab-register").style.display = name === "register" ? "" : "none";
+  document.querySelectorAll(".tab-btn").forEach((b,i) => {
+    b.classList.toggle("active", (i===0 && name==="login") || (i===1 && name==="register"));
+  });
+}
+</script>
+</body>
+</html>

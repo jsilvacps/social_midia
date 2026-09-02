@@ -308,6 +308,23 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     <span class="icon">⚙️</span>CONFIG
   </button>
 </nav>
+<!-- User info + logout -->
+<div style="padding:10px 12px;border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);margin-bottom:4px">
+  <div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+    👤 <span id="sidebar-username">{{ current_user.name or current_user.email }}</span>
+    <span id="sidebar-plan-badge" style="font-size:10px;padding:1px 7px;border-radius:20px;margin-left:4px;
+      background:{% if current_user.plan=='active' %}rgba(0,229,160,.15){% else %}rgba(59,130,246,.15){% endif %};
+      color:{% if current_user.plan=='active' %}#00e5a0{% else %}#3b82f6{% endif %}">
+      {{ current_user.plan }}
+    </span>
+  </div>
+  <div style="display:flex;gap:6px;margin-top:8px">
+    {% if current_user.is_admin %}
+    <a href="/admin" style="flex:1;text-align:center;padding:6px;border-radius:7px;background:rgba(139,92,246,.15);color:#8b5cf6;font-size:11px;font-weight:700;text-decoration:none">⚙️ Admin</a>
+    {% endif %}
+    <a href="/logout" style="flex:1;text-align:center;padding:6px;border-radius:7px;background:rgba(239,68,68,.1);color:#ef4444;font-size:11px;font-weight:700;text-decoration:none">🚪 Sair</a>
+  </div>
+</div>
 <div class="sidebar-footer" style="display:flex;align-items:center;gap:10px">
   <img src="/static/icons/zapshot-logo.png" width="32" height="32" style="object-fit:contain;border-radius:8px;flex-shrink:0">
   <div>

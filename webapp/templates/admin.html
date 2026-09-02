@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZapShot — Admin</title>
+  <style>
+    :root {
+      --bg: #070D1F;
+      --card: #0f1829;
+      --border: #1e2d4a;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --accent: #3b82f6;
+      --green: #00e5a0;
+      --purple: #8b5cf6;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-left img { width: 36px; height: 36px; border-radius: 8px; object-fit: contain; }
+    .header-left h1 {
+      font-size: 18px;
+      font-weight: 800;
+      background: linear-gradient(90deg, #00e5a0, #3b82f6, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-left span { color: var(--muted); font-size: 13px; }
+    .header-right { display: flex; gap: 10px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
+           border: none; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none;
+           transition: opacity .2s; }
+    .btn:hover { opacity: .8; }
+    .btn-ghost  { background: var(--border); color: var(--text); }
+    .btn-danger { background: rgba(239,68,68,.15); color: var(--danger); border: 1px solid rgba(239,68,68,.3); }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; }
+    .btn-success { background: rgba(0,229,160,.15); color: var(--green); border: 1px solid rgba(0,229,160,.3); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    /* Main */
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-card .value { font-size: 28px; font-weight: 800; color: var(--accent); }
+    .stat-card .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* Section */
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 10px 12px;
+      text-align: left;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    td {
+      border-bottom: 1px solid rgba(30,45,74,.5);
+      padding: 12px 12px;
+      vertical-align: middle;
+    }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    /* Badge */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-trial    { background: rgba(59,130,246,.15);  color: #3b82f6; }
+    .badge-active   { background: rgba(0,229,160,.15);   color: #00e5a0; }
+    .badge-inactive { background: rgba(239,68,68,.15);   color: #ef4444; }
+    .badge-admin    { background: rgba(139,92,246,.15);  color: #8b5cf6; }
+
+    /* Plan form */
+    .plan-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      padding: 4px 8px;
+    }
+
+    .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e2d4a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 12px 18px;
+      display: none;
+      z-index: 999;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <img src="/static/icons/zapshot-logo.png" alt="ZapShot">
+    <div>
+      <h1>ZapShot</h1>
+      <span>Painel Administrativo</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <a href="/" class="btn btn-ghost">← App</a>
+    <a href="/logout" class="btn btn-danger">Sair</a>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card"><div class="value" id="st-users">—</div><div class="label">Total de usuários</div></div>
+    <div class="stat-card"><div class="value" id="st-active">—</div><div class="label">Contas ativas</div></div>
+    <div class="stat-card"><div class="value" id="st-posts">—</div><div class="label">Disparos agendados</div></div>
+    <div class="stat-card"><div class="value" id="st-sent">—</div><div class="label">Disparos enviados</div></div>
+  </div>
+
+  <!-- Users table -->
+  <div class="section-title">👥 Usuários cadastrados</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Nome / Email</th>
+          <th>Plano</th>
+          <th>Disparos</th>
+          <th>Cadastro</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td style="color:var(--muted)">{{ u.id }}</td>
+          <td>
+            <div style="font-weight:600">{{ u.name or '—' }}</div>
+            <div style="font-size:12px;color:var(--muted)">{{ u.email }}</div>
+            {% if u.is_admin %}<span class="badge badge-admin" style="margin-top:4px">Admin</span>{% endif %}
+          </td>
+          <td>
+            <form method="POST" action="/admin/users/{{ u.id }}/plan" style="display:inline">
+              <select name="plan" class="plan-select" onchange="this.form.submit()">
+                <option value="trial"    {% if u.plan=='trial'    %}selected{% endif %}>🟡 Trial</option>
+                <option value="active"   {% if u.plan=='active'   %}selected{% endif %}>🟢 Ativo</option>
+                <option value="inactive" {% if u.plan=='inactive' %}selected{% endif %}>🔴 Inativo</option>
+              </select>
+            </form>
+          </td>
+          <td>{{ u.posts_count }}</td>
+          <td style="color:var(--muted);font-size:12px">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+          <td>
+            <div class="actions">
+              {% if not u.is_admin or u.id != current_user.id %}
+              <form method="POST" action="/admin/users/{{ u.id }}/admin" style="display:inline">
+                <button type="submit" class="btn btn-ghost btn-sm" title="Alternar admin">
+                  {% if u.is_admin %}⬇️ Remover admin{% else %}⬆️ Tornar admin{% endif %}
+                </button>
+              </form>
+              {% endif %}
+              {% if u.id != current_user.id %}
+              <button class="btn btn-danger btn-sm" onclick="deleteUser({{ u.id }}, '{{ u.email }}')">🗑️</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+function toast(msg, ms=3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+async function deleteUser(id, email) {
+  if (!confirm(`Excluir usuário ${email} e todos os dados?\nEsta ação não pode ser desfeita.`)) return;
+  const r = await fetch(`/admin/users/${id}`, {method:"POST"}).then(r=>r.json());
+  if(r.ok) { toast("✅ Usuário excluído"); setTimeout(()=>location.reload(), 1000); }
+  else toast("❌ " + (r.error || "Erro"));
+}
+
+// Load stats
+(async () => {
+  try {
+    const s = await fetch("/api/admin/stats").then(r=>r.json());
+    document.getElementById("st-users").textContent  = s.total_users;
+    document.getElementById("st-active").textContent = s.active_users;
+    document.getElementById("st-posts").textContent  = s.total_posts;
+    document.getElementById("st-sent").textContent   = s.sent_posts;
+  } catch(e) {}
+})();
+</script>
+</body>
+</html>

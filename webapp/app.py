@@ -1011,7 +1011,7 @@ def api_buscar_grupos():
     if not api_key:
         return jsonify({"ok": False, "error": "no_key"})
 
-    parts = ["chat.whatsapp.com"]
+    parts = ["site:chat.whatsapp.com/invite"]
     if tema:  parts.append(tema)
     if local: parts.append(local)
     query = " ".join(parts)
@@ -1027,9 +1027,16 @@ def api_buscar_grupos():
             return jsonify({"ok": False, "error": data.get("request_info", {}).get("message", "Erro ScaleSerp")})
 
         items   = data.get("organic_results", [])
-        results = [{"title": item.get("title", "Grupo WhatsApp"),
+        results = []
+        for item in items:
+            link = item.get("link", "")
+            # Só aceita links diretos de grupos WhatsApp
+            if "chat.whatsapp.com/invite/" in link or link.startswith("https://chat.whatsapp.com"):
+                results.append({
+                    "title":   item.get("title", "Grupo WhatsApp"),
                     "snippet": item.get("snippet", ""),
-                    "link": item.get("link", "")} for item in items]
+                    "link":    link,
+                })
 
         print(f"[buscar_grupos] query={query!r} total={len(results)}")
         return jsonify({"ok": True, "results": results})

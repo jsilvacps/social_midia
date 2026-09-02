@@ -1286,7 +1286,7 @@ async function buscarGrupos() {
         const microId = mun?.microrregiao?.id;
         if(microId) {
           const vizinhos = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/microrregioes/${microId}/municipios`).then(r=>r.json());
-          cidades_regiao = vizinhos.map(c=>c.nome);
+          cidades_regiao = vizinhos.map(c=>c.nome);  // todas as cidades da microrregião (backend limita a 60)
         }
       } catch(e) { console.warn("Erro ao buscar região:", e); }
     }

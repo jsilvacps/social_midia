@@ -1153,15 +1153,52 @@ def api_buscar_grupos():
         except Exception:
             return []
 
-    def _build_locais():
-        """Retorna lista de (city_name, local_string) para pesquisar."""
+    # Agrupa lista de cidades em lotes de N para usar OR no Google
+    def _batches(lst, size):
+        for i in range(0, len(lst), size):
+            yield lst[i:i+size]
+
+    def _or_expr(cities):
+        """Monta '(Campinas OR Sumaré OR Valinhos)' ou só 'Campinas'."""
+        if len(cities) == 1:
+            return cities[0]
+        return "(" + " OR ".join(cities) + ")"
+
+    def _build_lote_queries():
+        """
+        Retorna lista de (label, queries_diretas, queries_gw).
+        Com região: agrupa 8 cidades por lote via OR → menos chamadas à ScaleSerp.
+        Sem região: usa local normal.
+        """
         if cidades_regiao and isinstance(cidades_regiao, list):
-            out = []
-            for c in cidades_regiao[:25]:   # limite de 25 cidades para não explodir
-                loc = f"{c} {uf}".strip() if uf else c
-                out.append((c, loc))
-            return out
-        return [(city, local)]
+            lotes = []
+            todas = cidades_regiao[:60]   # aceita até 60 cidades (≈8 lotes de 8)
+            for lote in _batches(todas, 8):
+                or_expr = _or_expr(lote)
+                loc_or  = f"{or_expr} {uf}".strip() if uf else or_expr
+                q_local_or = f"{loc_or} {tema}".strip()
+                qs_dir = [
+                    f'"chat.whatsapp.com/invite" {q_local_or}',
+                    f'grupos whatsapp {q_local_or} "chat.whatsapp.com"',
+                ]
+                if tema:
+                    qs_dir.insert(0, f'"chat.whatsapp.com/invite" {tema} {or_expr}')
+                qs_gw = [
+                    f"site:gruposwhats.app {q_local_or}",
+                    f"site:gruposwhats.app {or_expr}",
+                ]
+                lotes.append((or_expr, qs_dir, qs_gw))
+            return lotes
+        else:
+            q_local = f"{local} {tema}".strip()
+            qs_dir  = [
+                f'"chat.whatsapp.com/invite" {q_local}',
+                f'grupos whatsapp {q_local} "chat.whatsapp.com"',
+            ]
+            if tema:
+                qs_dir.insert(0, f'"chat.whatsapp.com/invite" {tema} {city}')
+            qs_gw = [f"site:gruposwhats.app {q_local}", f"site:gruposwhats.app {city}"]
+            return [(city, qs_dir, qs_gw)]
 
     try:
         seen_codes   = set()
@@ -1170,18 +1207,10 @@ def api_buscar_grupos():
         gw_results   = []
         pages_to_scrape = []
 
-        for city_name, loc in _build_locais():
-            q_local = f"{loc} {tema}".strip()
+        for label, qs_dir, qs_gw in _build_lote_queries():
 
-            # ── Query 1: busca direta de links WA ──
-            queries = [
-                f'"chat.whatsapp.com/invite" {q_local}',
-                f'grupos whatsapp {q_local} "chat.whatsapp.com"',
-            ]
-            if tema:
-                queries.insert(0, f'"chat.whatsapp.com/invite" {tema} {city_name}')
-
-            for q in queries:
+            # ── Queries diretas de links WA ──
+            for q in qs_dir:
                 for it in _scaleserp(q, num=100):
                     url     = it.get("link", "")
                     title   = it.get("title", "")
@@ -1207,8 +1236,8 @@ def api_buscar_grupos():
                        not any(d in url for d in ("whatsapp.com", "wa.me")):
                         pages_to_scrape.append((url, title))
 
-            # ── Query 2: site:gruposwhats.app ──
-            for q_gw in [f"site:gruposwhats.app {q_local}", f"site:gruposwhats.app {city_name}"]:
+            # ── site:gruposwhats.app ──
+            for q_gw in qs_gw:
                 for it in _scaleserp(q_gw, num=100):
                     url   = it.get("link", "").rstrip("/")
                     title = it.get("title", "")
@@ -1235,7 +1264,8 @@ def api_buscar_grupos():
         for gr in gw_results:
             results.append(gr)
 
-        print(f"[buscar_grupos] cidades={len(_build_locais())} diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
+        lotes = _build_lote_queries()
+        print(f"[buscar_grupos] lotes={len(lotes)} diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})

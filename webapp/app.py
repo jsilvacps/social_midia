@@ -113,6 +113,9 @@ def init_db():
 
 init_db()
 
+def _hash_pw(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
 def seed_admin():
     """Cria usuário admin padrão via env vars (ADMIN_EMAIL + ADMIN_PASSWORD)."""
     email    = os.getenv("ADMIN_EMAIL", "")
@@ -137,9 +140,6 @@ def seed_admin():
 seed_admin()
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
-def _hash_pw(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
 def get_current_user():
     uid = session.get("user_id")
     if not uid:

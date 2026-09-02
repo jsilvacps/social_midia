@@ -657,10 +657,13 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </select>
         </div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;margin-top:6px;user-select:none">
-        <input type="checkbox" id="grupos-regiao" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
-        🗺️ Incluir cidades da região (microrregião IBGE)
-      </label>
+      <div id="grupos-regiao-wrap" onclick="toggleRegiao()"
+           style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:2px solid var(--border);margin-top:8px;cursor:pointer;transition:all .2s;user-select:none;background:transparent">
+        <input type="checkbox" id="grupos-regiao" style="display:none">
+        <div id="grupos-regiao-icon" style="width:22px;height:22px;border-radius:6px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;font-size:14px"></div>
+        <span style="font-size:13px;font-weight:600">🗺️ Incluir cidades da região</span>
+        <span id="grupos-regiao-badge" style="display:none;margin-left:auto;font-size:11px;font-weight:700;background:rgba(59,130,246,.2);color:var(--accent);padding:2px 8px;border-radius:20px">ATIVO</span>
+      </div>
       <button class="btn btn-primary" onclick="buscarGrupos()" id="btn-buscar-grupos" style="width:100%;margin-top:8px">
         🔍 Buscar Grupos
       </button>
@@ -1196,6 +1199,30 @@ async function sendNow(id, btn) {
 }
 
 // ══ Busca de Grupos ══════════════════════════════════════
+function toggleRegiao() {
+  const cb    = document.getElementById("grupos-regiao");
+  const wrap  = document.getElementById("grupos-regiao-wrap");
+  const icon  = document.getElementById("grupos-regiao-icon");
+  const badge = document.getElementById("grupos-regiao-badge");
+  cb.checked  = !cb.checked;
+  if(cb.checked) {
+    wrap.style.borderColor  = "var(--accent)";
+    wrap.style.background   = "rgba(59,130,246,.08)";
+    icon.style.background   = "var(--accent)";
+    icon.style.borderColor  = "var(--accent)";
+    icon.textContent        = "✓";
+    icon.style.color        = "#fff";
+    badge.style.display     = "block";
+  } else {
+    wrap.style.borderColor  = "var(--border)";
+    wrap.style.background   = "transparent";
+    icon.style.background   = "transparent";
+    icon.style.borderColor  = "var(--border)";
+    icon.textContent        = "";
+    badge.style.display     = "none";
+  }
+}
+
 async function loadCidades(uf) {
   const sel = document.getElementById("grupos-cidade");
   sel.innerHTML = "<option value=''>Carregando…</option>";

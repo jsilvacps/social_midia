@@ -1125,62 +1125,55 @@ def api_buscar_grupos():
         seen_codes = set()
         results    = []
 
-        # ── 1. Busca site:gruposwhats.app diretamente (maior agregador BR) ──
-        queries_agg = [f"site:gruposwhats.app {q_local}"]
+        # ── Busca site:gruposwhats.app via ScaleSerp ──
+        # Monta várias queries para pegar mais páginas /group/
+        queries_agg = [
+            f"site:gruposwhats.app {q_local}",
+            f"site:gruposwhats.app {city}",
+        ]
         if tema:
             queries_agg.append(f"site:gruposwhats.app {uf} {tema}")
-        queries_agg.append(f"site:gruposwhats.app {uf} {city}".strip())
 
-        group_pages = {}  # url → title
+        group_pages  = {}  # url → title  (páginas /group/XXXXX)
+        category_pages = []  # páginas de categoria (/estado/SP/campinas/vendas etc)
+
         for q in queries_agg:
             for it in _scaleserp(q, num=100):
-                url = it.get("link", "")
-                if "gruposwhats.app" in url and url not in group_pages:
-                    group_pages[url] = it.get("title", "Grupo WhatsApp")
+                url   = it.get("link", "")
+                title = it.get("title", "Grupo WhatsApp")
+                if "/group/" in url:
+                    group_pages[url] = title
+                elif "gruposwhats.app/estado/" in url:
+                    category_pages.append(url)
 
-        print(f"[buscar_grupos] {len(group_pages)} paginas gruposwhats.app encontradas")
+        print(f"[buscar_grupos] {len(group_pages)} paginas /group/ + {len(category_pages)} categorias")
 
-        # Raspa cada página de grupo para pegar link WA
-        for url, title in list(group_pages.items())[:60]:
-            for wa, nome_ctx in _wa_from_page(url):
+        # ── Raspa cada página /group/XXXXX (simples, 1 grupo por página) ──
+        for url, title in list(group_pages.items())[:80]:
+            for wa, _ in _wa_from_page(url):
                 code = wa.split("/")[-1]
                 if code not in seen_codes:
                     seen_codes.add(code)
-                    nome = title or nome_ctx or "Grupo WhatsApp"
-                    # Limpa título do Google ("Grupo de WhatsApp X – gruposwhats.app")
-                    nome = re.sub(r'\s*[|–-].*gruposwhats.*$', '', nome, flags=re.I).strip()
+                    nome = re.sub(r'\s*[|–\-].*$', '', title).strip() or "Grupo WhatsApp"
                     results.append({"link": wa, "name": nome, "title": nome, "snippet": ""})
 
-        # ── 2. Acesso direto à listagem por cidade/estado ──
-        direct_urls = []
-        if city_slug and uf:
-            direct_urls.append(f"https://gruposwhats.app/estado/{uf}/{city_slug}")
-        if uf and len(results) < 10:
-            direct_urls.append(f"https://gruposwhats.app/estado/{uf}")
-
-        for du in direct_urls:
-            for wa, nome_ctx in _wa_from_page(du):
-                code = wa.split("/")[-1]
-                if code not in seen_codes:
-                    seen_codes.add(code)
-                    results.append({"link": wa, "name": nome_ctx or "Grupo WhatsApp",
-                                    "title": nome_ctx or "Grupo WhatsApp", "snippet": ""})
-            print(f"[buscar_grupos] direto {du} total={len(results)}")
-
-        # ── 3. Fallback: busca geral por snippet com link WA ──
-        if len(results) < 5:
-            for it in _scaleserp(f"chat.whatsapp.com {q_local}", num=100):
-                url     = it.get("link", "")
-                title   = it.get("title", "")
-                snippet = it.get("snippet", "")
-                for text in (url, snippet):
-                    m = WA_PATTERN.search(text)
-                    if m:
-                        wa   = m.group(0)
-                        code = wa.split("/")[-1]
-                        if code not in seen_codes:
-                            seen_codes.add(code)
-                            results.append({"link": wa, "name": title, "title": title, "snippet": snippet})
+        # ── Se poucas páginas /group/, busca mais via categorias ──
+        # As páginas de categoria têm JS, mas podemos buscar os /group/ delas via ScaleSerp
+        if len(results) < 20 and category_pages:
+            for cat_url in category_pages[:5]:
+                cat_slug = cat_url.rstrip("/").split("/")[-1]
+                q_cat = f"site:gruposwhats.app {city} {cat_slug}"
+                for it in _scaleserp(q_cat, num=100):
+                    url   = it.get("link", "")
+                    title = it.get("title", "Grupo WhatsApp")
+                    if "/group/" in url and url not in group_pages:
+                        group_pages[url] = title
+                        for wa, _ in _wa_from_page(url):
+                            code = wa.split("/")[-1]
+                            if code not in seen_codes:
+                                seen_codes.add(code)
+                                nome = re.sub(r'\s*[|–\-].*$', '', title).strip() or "Grupo WhatsApp"
+                                results.append({"link": wa, "name": nome, "title": nome, "snippet": ""})
 
         print(f"[buscar_grupos] total={len(results)}")
         return jsonify({"ok": True, "results": results})

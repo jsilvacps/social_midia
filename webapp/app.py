@@ -1097,22 +1097,64 @@ def api_buscar_grupos():
                     results.append({"link": m.group(0), "name": title, "title": title, "snippet": snippet})
                 continue
 
-            # 3. Página de grupo em agregador — raspa para extrair link WA
-            if any(d in url for d in ("gruposwhats.app/group", "whatsappgrupos.com.br",
+            # 3. Página de agregador — raspa TODOS os links WA da página
+            if any(d in url for d in ("gruposwhats.app", "whatsappgrupos.com.br",
                                        "gzap.com.br", "zapgrupos", "grupos-whatsapp")):
                 try:
-                    pg = requests.get(url, timeout=6, headers=UA)
-                    m2 = WA_PATTERN.search(pg.text)
-                    if m2:
-                        code = m2.group(0).split("/")[-1]
+                    pg = requests.get(url, timeout=10, headers=UA)
+                    for m2 in WA_PATTERN.finditer(pg.text):
+                        wa = m2.group(0).rstrip("\"'\\>")
+                        code = wa.split("/")[-1]
                         if code not in seen_codes:
                             seen_codes.add(code)
-                            results.append({"link": m2.group(0), "name": title, "title": title, "snippet": snippet})
+                            # Tenta pegar nome próximo ao link
+                            start = max(0, m2.start() - 200)
+                            ctx   = re.sub(r'<[^>]+>', ' ', pg.text[start:m2.start()])
+                            words = [w for w in ctx.split() if len(w) > 2]
+                            nome  = " ".join(words[-6:]) if words else title
+                            results.append({"link": wa, "name": nome, "title": nome, "snippet": ""})
                 except Exception:
                     pass
 
+        # Acesso direto ao gruposwhats.app se local tem UF (ex: "Campinas SP")
+        parts_local = local.split()
+        uf_map = {"AC":"AC","AL":"AL","AP":"AP","AM":"AM","BA":"BA","CE":"CE","DF":"DF",
+                  "ES":"ES","GO":"GO","MA":"MA","MT":"MT","MS":"MS","MG":"MG","PA":"PA",
+                  "PB":"PB","PR":"PR","PE":"PE","PI":"PI","RJ":"RJ","RN":"RN","RS":"RS",
+                  "RO":"RO","RR":"RR","SC":"SC","SP":"SP","SE":"SE","TO":"TO"}
+        uf   = next((p for p in parts_local if p.upper() in uf_map), "")
+        city = " ".join(p for p in parts_local if p.upper() != uf).strip()
+        city_slug = city.lower().replace(" ", "-") if city else ""
+
+        direct_urls = []
+        if city_slug and uf:
+            direct_urls.append(f"https://gruposwhats.app/estado/{uf}/{city_slug}")
+        if uf:
+            direct_urls.append(f"https://gruposwhats.app/estado/{uf}")
+        if tema:
+            direct_urls.append(f"https://gruposwhats.app/search?q={tema}+{city_slug}".strip("+"))
+
+        for du in direct_urls:
+            try:
+                pg = requests.get(du, timeout=10, headers=UA)
+                if pg.status_code != 200:
+                    continue
+                for m2 in WA_PATTERN.finditer(pg.text):
+                    wa   = m2.group(0).rstrip("\"'\\>")
+                    code = wa.split("/")[-1]
+                    if code not in seen_codes:
+                        seen_codes.add(code)
+                        start = max(0, m2.start() - 200)
+                        ctx   = re.sub(r'<[^>]+>', ' ', pg.text[start:m2.start()])
+                        words = [w for w in ctx.split() if len(w) > 2]
+                        nome  = " ".join(words[-6:]) if words else "Grupo WhatsApp"
+                        results.append({"link": wa, "name": nome, "title": nome, "snippet": ""})
+                print(f"[buscar_grupos] direto {du} => +{len(results)} grupos")
+            except Exception as e:
+                print(f"[buscar_grupos] direto {du} erro: {e}")
+
         print(f"[buscar_grupos] resultados={len(results)}")
-        return jsonify({"ok": True, "results": results, "_debug": {"query": query, "organic": len(organic)}})
+        return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 

@@ -1314,7 +1314,9 @@ async function buscarGrupos() {
             📋 Copiar Link
           </button>
         </div>
-        ${g.type==='group_page' ? '<div style="font-size:10px;color:var(--muted);margin-top:4px">Clique em "Participar" na página que abrir</div>' : ''}
+        ${g.type==='group_page'
+          ? '<div style="font-size:10px;color:var(--muted);margin-top:4px">⚠️ Clique em "Participar" na página que abrir</div>'
+          : '<div style="font-size:10px;color:#00e5a0;margin-top:4px">✅ Link direto WhatsApp</div>'}
       </div>`;
     list.appendChild(card);
   });

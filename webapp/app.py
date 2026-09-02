@@ -1177,51 +1177,82 @@ def api_buscar_grupos():
         seen_codes = set()
         results    = []
 
-        # ── Busca site:gruposwhats.app via ScaleSerp ──
-        # Retorna as páginas /group/ com nome no título — link direto para o gruposwhats.app
-        seen_urls = set()
-        queries_agg = [
-            f"site:gruposwhats.app {q_local}",
-            f"site:gruposwhats.app {city}",
+        # ── Query 1: busca direta de links WA em qualquer página ──
+        queries = [
+            f'"chat.whatsapp.com/invite" {q_local}',
+            f'grupos whatsapp {q_local} "chat.whatsapp.com"',
         ]
         if tema:
-            queries_agg.insert(0, f"site:gruposwhats.app {city} {tema}")
+            queries.insert(0, f'"chat.whatsapp.com/invite" {tema} {city}')
 
-        category_pages = []
+        seen_codes = set()
+        pages_to_scrape = []  # (url, title) para raspar
 
-        for q in queries_agg:
+        for q in queries:
             for it in _scaleserp(q, num=100):
+                url     = it.get("link", "")
+                title   = it.get("title", "")
+                snippet = it.get("snippet", "")
+
+                # Link WA direto na URL
+                m = WA_PATTERN.search(url)
+                if m:
+                    code = m.group(0).split("/")[-1]
+                    if code not in seen_codes:
+                        seen_codes.add(code)
+                        results.append({"link": m.group(0), "name": title,
+                                        "title": title, "snippet": snippet})
+                    continue
+
+                # Link WA no snippet
+                for m in WA_PATTERN.finditer(snippet):
+                    code = m.group(0).split("/")[-1]
+                    if code not in seen_codes:
+                        seen_codes.add(code)
+                        results.append({"link": m.group(0), "name": title,
+                                        "title": title, "snippet": snippet})
+
+                # Página promissora para raspar (tem "chat.whatsapp" no snippet/título)
+                if ("chat.whatsapp" in snippet or "chat.whatsapp" in title) and \
+                   not any(d in url for d in ("whatsapp.com", "wa.me")):
+                    pages_to_scrape.append((url, title))
+
+        # ── Query 2: site:gruposwhats.app para nomes — retorna link da página como fallback ──
+        seen_gw_urls = set()
+        gw_results   = []
+        for q_gw in [f"site:gruposwhats.app {q_local}", f"site:gruposwhats.app {city}"]:
+            for it in _scaleserp(q_gw, num=100):
                 url   = it.get("link", "").rstrip("/")
                 title = it.get("title", "")
-                if not url or url in seen_urls:
-                    continue
-                seen_urls.add(url)
+                if url and url not in seen_gw_urls and "/group/" in url:
+                    seen_gw_urls.add(url)
+                    nome = re.sub(r'\s*[|–\-].*$', '', title).strip()
+                    nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or "Grupo WhatsApp"
+                    gw_results.append({"link": url, "name": nome, "title": nome,
+                                       "snippet": it.get("snippet",""), "type": "group_page"})
 
-                if "/group/" in url:
-                    # Página de grupo individual — nome já vem no título do Google
-                    nome = re.sub(r'\s*[|–\-].*$', '', title).strip() or "Grupo WhatsApp"
-                    nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or nome
-                    results.append({"link": url, "name": nome, "title": nome,
-                                    "snippet": it.get("snippet",""), "type": "group_page"})
-                elif "gruposwhats.app/estado/" in url:
-                    category_pages.append((url, title))
+        # ── Raspa páginas promissoras para extrair link WA ──
+        for url, title in pages_to_scrape[:15]:
+            try:
+                pg = requests.get(url, timeout=7, headers=UA)
+                # Busca em meta tags (og:description, og:url) e no corpo
+                full = pg.text
+                for m in WA_PATTERN.finditer(full):
+                    code = m.group(0).split("/")[-1]
+                    if code not in seen_codes:
+                        seen_codes.add(code)
+                        results.append({"link": m.group(0), "name": title,
+                                        "title": title, "snippet": ""})
+            except Exception:
+                pass
 
-        # ── Busca adicional pelas categorias encontradas ──
-        if len(results) < 15 and category_pages:
-            for cat_url, _ in category_pages[:4]:
-                cat_slug = cat_url.rstrip("/").split("/")[-1]
-                q_cat = f"site:gruposwhats.app {city} {cat_slug}"
-                for it in _scaleserp(q_cat, num=100):
-                    url   = it.get("link", "").rstrip("/")
-                    title = it.get("title", "")
-                    if url and url not in seen_urls and "/group/" in url:
-                        seen_urls.add(url)
-                        nome = re.sub(r'\s*[|–\-].*$', '', title).strip() or "Grupo WhatsApp"
-                        nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or nome
-                        results.append({"link": url, "name": nome, "title": nome,
-                                        "snippet": it.get("snippet",""), "type": "group_page"})
+        # ── Mescla: links diretos primeiro, depois gruposwhats.app ──
+        # Adiciona grupos do gruposwhats.app que não duplicam
+        for gr in gw_results:
+            # Só adiciona se ainda não temos muitos diretos
+            results.append(gr)
 
-        print(f"[buscar_grupos] total={len(results)}")
+        print(f"[buscar_grupos] diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})

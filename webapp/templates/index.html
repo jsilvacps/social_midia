@@ -660,6 +660,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <button class="btn btn-primary" onclick="buscarGrupos()" id="btn-buscar-grupos" style="width:100%;margin-top:4px">
         🔍 Buscar Grupos
       </button>
+      <button class="btn btn-ghost" onclick="debugGrupos()" style="width:100%;margin-top:6px;font-size:11px">
+        🛠️ Diagnóstico (ver o que a API retorna)
+      </button>
     </div>
 
     <div id="grupos-nokey" style="display:none;margin-top:8px" class="tip">
@@ -1202,6 +1205,40 @@ async function loadCidades(uf) {
   } catch(e) {
     sel.innerHTML = "<option value=''>Erro ao carregar</option>";
   }
+}
+
+async function debugGrupos() {
+  const estado = document.getElementById("grupos-estado");
+  const cidade = document.getElementById("grupos-cidade").value;
+  const uf     = estado.value;
+  const local  = cidade ? `${cidade} ${uf}` : (uf ? estado.options[estado.selectedIndex]?.text : "campinas SP");
+  const tema   = document.getElementById("grupos-tema").value.trim();
+  const query  = `chat.whatsapp.com ${local} ${tema}`.trim();
+
+  toast("⏳ Rodando diagnóstico…");
+  const d = await fetch("/api/grupos/debug", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({query})
+  }).then(r=>r.json());
+
+  const organic = d.raw?.organic_results || [];
+  const info    = d.raw?.request_info    || {};
+  let txt = `QUERY: ${query}\n`;
+  txt += `STATUS API: ${info.success === false ? "ERRO - " + info.message : "OK"}\n`;
+  txt += `RESULTADOS: ${organic.length}\n\n`;
+  organic.slice(0, 10).forEach((it, i) => {
+    txt += `[${i+1}] ${it.title}\n     ${it.link}\n`;
+  });
+
+  // Mostra numa caixa visível na tela
+  let box = document.getElementById("debug-box");
+  if (!box) {
+    box = document.createElement("pre");
+    box.id = "debug-box";
+    box.style = "background:#0a1628;border:1px solid #3b82f6;border-radius:10px;padding:14px;font-size:11px;color:#94a3b8;white-space:pre-wrap;word-break:break-all;margin-top:12px";
+    document.getElementById("tab-grupos").appendChild(box);
+  }
+  box.textContent = txt;
 }
 
 async function buscarGrupos() {

@@ -980,6 +980,28 @@ def api_evo_test():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
+@app.route("/api/grupos/nome", methods=["POST"])
+@require_login
+def api_grupo_nome():
+    """Busca o nome real do grupo WhatsApp pela página de convite."""
+    link = (request.get_json() or {}).get("link", "")
+    if not link or "chat.whatsapp.com/invite/" not in link:
+        return jsonify({"ok": False, "name": "Grupo WhatsApp"})
+    try:
+        r = requests.get(link, timeout=8,
+                         headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)"})
+        html = r.text
+        # og:title tem o nome do grupo
+        m = re.search(r'<meta property="og:title"\s+content="([^"]+)"', html)
+        if not m:
+            m = re.search(r'<title>([^<]+)</title>', html)
+        name = m.group(1).strip() if m else "Grupo WhatsApp"
+        # Remove sufixos genéricos do WhatsApp
+        name = re.sub(r'\s*[\|–-]\s*WhatsApp.*$', '', name).strip()
+        return jsonify({"ok": True, "name": name or "Grupo WhatsApp"})
+    except Exception as exc:
+        return jsonify({"ok": False, "name": "Grupo WhatsApp", "error": str(exc)})
+
 @app.route("/api/config/ig-test", methods=["POST"])
 @require_login
 def api_ig_test():
@@ -1011,52 +1033,64 @@ def api_buscar_grupos():
     if not api_key:
         return jsonify({"ok": False, "error": "no_key"})
 
-    # Monta query: "chat.whatsapp.com/invite" + localidade + tema (opcional)
+    import re as _re
+    WA_PATTERN = _re.compile(r'https://chat\.whatsapp\.com/invite/[A-Za-z0-9_-]+')
+
+    def _scaleserp(q):
+        r = requests.get(
+            "https://api.scaleserp.com/search",
+            params={"api_key": api_key, "q": q, "num": 100, "gl": "br", "hl": "pt"},
+            timeout=20
+        )
+        return r.json().get("organic_results", [])
+
+    # Query 1: com tema se fornecido
     parts = ['"chat.whatsapp.com/invite"']
     if local: parts.append(local)
     if tema:  parts.append(tema)
-    query = " ".join(parts)
+    q1 = " ".join(parts)
+
+    # Query 2: variação sem aspas, mais ampla
+    parts2 = ["chat.whatsapp.com/invite", local]
+    if tema: parts2.append(tema)
+    q2 = " ".join(filter(None, parts2))
 
     try:
-        r = requests.get(
-            "https://api.scaleserp.com/search",
-            params={"api_key": api_key, "q": query, "num": 20, "gl": "br", "hl": "pt"},
-            timeout=15
-        )
-        data = r.json()
-        if data.get("request_info", {}).get("success") is False:
-            return jsonify({"ok": False, "error": data.get("request_info", {}).get("message", "Erro ScaleSerp")})
+        items = _scaleserp(q1)
+        if len(items) < 10:
+            items += _scaleserp(q2)
 
-        import re as _re
-        WA_PATTERN = _re.compile(r'https://chat\.whatsapp\.com/invite/[A-Za-z0-9]+')
-
-        items   = data.get("organic_results", [])
-        results = []
-        seen_links = set()
+        seen_codes = set()
+        results    = []
         for item in items:
             link    = item.get("link", "")
             snippet = item.get("snippet", "")
-            title   = item.get("title", "Grupo WhatsApp")
+            title   = item.get("title", "")
 
-            # Link direto do WhatsApp
+            # Extrai link WA do link ou do snippet
             if "chat.whatsapp.com/invite/" in link:
-                wa_link = link
+                wa_link = WA_PATTERN.search(link)
+                wa_link = wa_link.group(0) if wa_link else link
             else:
-                # Tenta extrair link do snippet ou título
                 match = WA_PATTERN.search(snippet) or WA_PATTERN.search(title)
-                wa_link = match.group(0) if match else link
+                if not match:
+                    continue
+                wa_link = match.group(0)
 
-            if wa_link in seen_links:
+            # Deduplica pelo código do convite
+            code = wa_link.rstrip("/").split("/")[-1]
+            if code in seen_codes:
                 continue
-            seen_links.add(wa_link)
+            seen_codes.add(code)
 
             results.append({
-                "title":   title,
+                "title":   title or "Grupo WhatsApp",
                 "snippet": snippet,
                 "link":    wa_link,
+                "name":    "",   # será preenchido pelo frontend via /api/grupos/nome
             })
 
-        print(f"[buscar_grupos] query={query!r} total={len(results)}")
+        print(f"[buscar_grupos] q={q1!r} total={len(results)}")
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})

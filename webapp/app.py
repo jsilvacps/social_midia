@@ -980,6 +980,24 @@ def api_evo_test():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
+@app.route("/api/grupos/debug", methods=["POST"])
+@require_login
+def api_grupos_debug():
+    """Retorna o raw do ScaleSerp para diagnóstico."""
+    data  = request.get_json() or {}
+    query = data.get("query", "chat.whatsapp.com campinas SP")
+    cfg   = load_config()
+    api_key = cfg.get("google_api_key", "") or os.getenv("GOOGLE_API_KEY", "")
+    if not api_key:
+        return jsonify({"ok": False, "error": "sem chave api"})
+    try:
+        r = requests.get("https://api.scaleserp.com/search",
+            params={"api_key": api_key, "q": query, "num": 10, "gl": "br", "hl": "pt"},
+            timeout=20)
+        return jsonify({"ok": True, "status": r.status_code, "raw": r.json()})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
 @app.route("/api/grupos/nome", methods=["POST"])
 @require_login
 def api_grupo_nome():

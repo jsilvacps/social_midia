@@ -1008,7 +1008,22 @@ def api_grupos_debug():
     except Exception as e:
         out["q_site_gruposwhats"] = {"error": str(e)}
 
-    # 2. Acesso direto ao gruposwhats.app/estado
+    # 2. Testa raspagem de uma página /group/ concreta
+    test_group = "https://gruposwhats.app/group/695038"
+    try:
+        pg2 = requests.get(test_group, timeout=8, headers=UA)
+        wa2 = WA.findall(pg2.text)
+        out["group_page_test"] = {
+            "url": test_group,
+            "status": pg2.status_code,
+            "wa_links_found": len(wa2),
+            "wa_links": wa2[:3],
+            "html_snippet": pg2.text[:1000],
+        }
+    except Exception as e:
+        out["group_page_test"] = {"error": str(e)}
+
+    # 3. Acesso direto ao gruposwhats.app/estado
     uf_set = {"AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
               "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"}
     parts = local.split()

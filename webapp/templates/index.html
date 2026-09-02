@@ -1231,6 +1231,12 @@ async function debugGrupos() {
   (dir.wa_links_sample||[]).forEach(l => txt += `  ${l}\n`);
   txt += `\nHTML (primeiros 500 chars):\n${(dir.html_snippet||"").slice(0,500)}`;
 
+  const gpt = dbg.group_page_test || {};
+  txt += `\n\n=== PÁGINA /group/ INDIVIDUAL ===\n`;
+  txt += `URL: ${gpt.url}\nStatus: ${gpt.status}\nLinks WA encontrados: ${gpt.wa_links_found ?? (gpt.error||"?")}\n`;
+  (gpt.wa_links||[]).forEach(l => txt += `  ${l}\n`);
+  txt += `HTML:\n${(gpt.html_snippet||"").slice(0,800)}`;
+
   // Mostra numa caixa visível na tela
   let box = document.getElementById("debug-box");
   if (!box) {

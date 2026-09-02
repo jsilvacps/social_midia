@@ -1211,24 +1211,25 @@ async function debugGrupos() {
   const estado = document.getElementById("grupos-estado");
   const cidade = document.getElementById("grupos-cidade").value;
   const uf     = estado.value;
-  const local  = cidade ? `${cidade} ${uf}` : (uf ? estado.options[estado.selectedIndex]?.text : "campinas SP");
+  const local  = cidade ? `${cidade} ${uf}` : (uf ? estado.options[estado.selectedIndex]?.text+" "+uf : "Campinas SP");
   const tema   = document.getElementById("grupos-tema").value.trim();
-  const query  = `chat.whatsapp.com ${local} ${tema}`.trim();
 
   toast("⏳ Rodando diagnóstico…");
   const d = await fetch("/api/grupos/debug", {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({query})
+    body: JSON.stringify({local, tema})
   }).then(r=>r.json());
 
-  const organic = d.raw?.organic_results || [];
-  const info    = d.raw?.request_info    || {};
-  let txt = `QUERY: ${query}\n`;
-  txt += `STATUS API: ${info.success === false ? "ERRO - " + info.message : "OK"}\n`;
-  txt += `RESULTADOS: ${organic.length}\n\n`;
-  organic.slice(0, 10).forEach((it, i) => {
-    txt += `[${i+1}] ${it.title}\n     ${it.link}\n`;
-  });
+  const dbg = d.debug || {};
+  const q1  = dbg.q_site_gruposwhats || {};
+  const dir = dbg.direto || {};
+  let txt = `=== SCALESERP site:gruposwhats.app ===\n`;
+  txt += `Query: ${q1.query}\nResultados: ${q1.count ?? "erro"}\n`;
+  (q1.results||[]).forEach((it,i) => txt += `  [${i+1}] ${it.title}\n       ${it.link}\n`);
+  txt += `\n=== ACESSO DIRETO ===\n`;
+  txt += `URL: ${dir.url}\nStatus HTTP: ${dir.status}\nLinks WA encontrados: ${dir.wa_links_found ?? "erro"}\n`;
+  (dir.wa_links_sample||[]).forEach(l => txt += `  ${l}\n`);
+  txt += `\nHTML (primeiros 500 chars):\n${(dir.html_snippet||"").slice(0,500)}`;
 
   // Mostra numa caixa visível na tela
   let box = document.getElementById("debug-box");

@@ -983,20 +983,50 @@ def api_evo_test():
 @app.route("/api/grupos/debug", methods=["POST"])
 @require_login
 def api_grupos_debug():
-    """Retorna o raw do ScaleSerp para diagnóstico."""
-    data  = request.get_json() or {}
-    query = data.get("query", "chat.whatsapp.com campinas SP")
-    cfg   = load_config()
+    """Diagnóstico completo: ScaleSerp + raspagem direta."""
+    data    = request.get_json() or {}
+    local   = data.get("local", "Campinas SP")
+    tema    = data.get("tema", "")
+    cfg     = load_config()
     api_key = cfg.get("google_api_key", "") or os.getenv("GOOGLE_API_KEY", "")
     if not api_key:
         return jsonify({"ok": False, "error": "sem chave api"})
+
+    UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    WA = re.compile(r'https://chat\.whatsapp\.com/invite/[A-Za-z0-9_-]+')
+
+    out = {}
+
+    # 1. Query site:gruposwhats.app
+    q1 = f"site:gruposwhats.app {local} {tema}".strip()
     try:
-        r = requests.get("https://api.scaleserp.com/search",
-            params={"api_key": api_key, "q": query, "num": 10, "gl": "br", "hl": "pt"},
-            timeout=20)
-        return jsonify({"ok": True, "status": r.status_code, "raw": r.json()})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)})
+        r1 = requests.get("https://api.scaleserp.com/search",
+            params={"api_key": api_key, "q": q1, "num": 10, "gl": "br", "hl": "pt"}, timeout=15)
+        org1 = r1.json().get("organic_results", [])
+        out["q_site_gruposwhats"] = {"query": q1, "count": len(org1),
+            "results": [{"title": it.get("title","")[:80], "link": it.get("link","")} for it in org1]}
+    except Exception as e:
+        out["q_site_gruposwhats"] = {"error": str(e)}
+
+    # 2. Acesso direto ao gruposwhats.app/estado
+    uf_set = {"AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
+              "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"}
+    parts = local.split()
+    uf    = next((p.upper() for p in parts if p.upper() in uf_set), "")
+    city  = " ".join(p for p in parts if p.upper() != uf).strip()
+    slug  = re.sub(r'[^a-z0-9]+', '-', city.lower()).strip('-')
+    du    = f"https://gruposwhats.app/estado/{uf}/{slug}" if slug and uf else f"https://gruposwhats.app/estado/{uf}"
+    try:
+        pg = requests.get(du, timeout=8, headers=UA)
+        wa_links = WA.findall(pg.text)
+        out["direto"] = {"url": du, "status": pg.status_code,
+                         "wa_links_found": len(wa_links),
+                         "wa_links_sample": wa_links[:5],
+                         "html_snippet": pg.text[:800]}
+    except Exception as e:
+        out["direto"] = {"url": du, "error": str(e)}
+
+    return jsonify({"ok": True, "debug": out})
 
 @app.route("/api/grupos/nome", methods=["POST"])
 @require_login

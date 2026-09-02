@@ -1232,10 +1232,14 @@ async function debugGrupos() {
   txt += `\nHTML (primeiros 500 chars):\n${(dir.html_snippet||"").slice(0,500)}`;
 
   const gpt = dbg.group_page_test || {};
-  txt += `\n\n=== PÁGINA /group/ INDIVIDUAL ===\n`;
-  txt += `URL: ${gpt.url}\nStatus: ${gpt.status}\nLinks WA encontrados: ${gpt.wa_links_found ?? (gpt.error||"?")}\n`;
-  (gpt.wa_links||[]).forEach(l => txt += `  ${l}\n`);
-  txt += `HTML:\n${(gpt.html_snippet||"").slice(0,800)}`;
+  txt += `\n\n=== API INTERNA gruposwhats.app/group/695038 ===\n`;
+  txt += `CSRF encontrado: ${gpt.csrf_found}\n`;
+  txt += `Códigos longos no HTML: ${(gpt.html_long_codes_sample||[]).join(", ")}\n\n`;
+  (gpt.endpoints||[]).forEach(ep => {
+    txt += `[${ep.method}] ${ep.url}\n`;
+    txt += `  status=${ep.status} location=${ep.location||"-"}\n`;
+    txt += `  wa_links=${JSON.stringify(ep.wa_links||[])} body=${ep.body_snippet||ep.error||""}\n\n`;
+  });
 
   // Mostra numa caixa visível na tela
   let box = document.getElementById("debug-box");

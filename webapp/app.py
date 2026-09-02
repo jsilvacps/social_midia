@@ -1008,17 +1008,54 @@ def api_grupos_debug():
     except Exception as e:
         out["q_site_gruposwhats"] = {"error": str(e)}
 
-    # 2. Testa raspagem de uma página /group/ concreta
-    test_group = "https://gruposwhats.app/group/695038"
+    # 2. Testa API interna do gruposwhats.app
+    test_id = "695038"
+    base_url = f"https://gruposwhats.app/group/{test_id}"
+    api_results = {}
     try:
-        pg2 = requests.get(test_group, timeout=8, headers=UA)
-        wa2 = WA.findall(pg2.text)
+        # Pega CSRF token da página
+        pg2 = requests.get(base_url, timeout=8, headers=UA)
+        csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', pg2.text)
+        csrf_token = csrf.group(1) if csrf else ""
+
+        # Procura qualquer padrão de link/invite no HTML completo
+        invite_codes = re.findall(r'[A-Za-z0-9_-]{20,}', pg2.text)
+        wa_matches = [c for c in invite_codes if len(c) >= 20]
+
+        # Tenta endpoints comuns de API Laravel
+        endpoints = [
+            ("GET",  f"https://gruposwhats.app/api/group/{test_id}"),
+            ("GET",  f"https://gruposwhats.app/api/grupos/{test_id}"),
+            ("POST", f"https://gruposwhats.app/group/{test_id}/redirect"),
+            ("POST", f"https://gruposwhats.app/group/{test_id}/participar"),
+            ("POST", f"https://gruposwhats.app/group/{test_id}/link"),
+            ("GET",  f"https://gruposwhats.app/group/{test_id}/go"),
+        ]
+        ep_results = []
+        hdrs = {**UA, "X-CSRF-TOKEN": csrf_token, "X-Requested-With": "XMLHttpRequest",
+                "Referer": base_url, "Accept": "application/json, text/plain, */*"}
+        for method, ep_url in endpoints:
+            try:
+                if method == "POST":
+                    rr = requests.post(ep_url, timeout=5, headers=hdrs,
+                                       data={"_token": csrf_token}, allow_redirects=False)
+                else:
+                    rr = requests.get(ep_url, timeout=5, headers=hdrs, allow_redirects=False)
+                wa_in_resp = WA.findall(rr.text)
+                ep_results.append({
+                    "url": ep_url, "method": method,
+                    "status": rr.status_code,
+                    "location": rr.headers.get("Location",""),
+                    "wa_links": wa_in_resp,
+                    "body_snippet": rr.text[:200],
+                })
+            except Exception as ee:
+                ep_results.append({"url": ep_url, "error": str(ee)})
+
         out["group_page_test"] = {
-            "url": test_group,
-            "status": pg2.status_code,
-            "wa_links_found": len(wa2),
-            "wa_links": wa2[:3],
-            "html_snippet": pg2.text[:1000],
+            "csrf_found": bool(csrf_token),
+            "html_long_codes_sample": wa_matches[:10],
+            "endpoints": ep_results,
         }
     except Exception as e:
         out["group_page_test"] = {"error": str(e)}

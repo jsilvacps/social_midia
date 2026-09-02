@@ -1011,32 +1011,50 @@ def api_buscar_grupos():
     if not api_key:
         return jsonify({"ok": False, "error": "no_key"})
 
-    parts = ["site:chat.whatsapp.com/invite"]
-    if tema:  parts.append(tema)
+    # Monta query: "chat.whatsapp.com/invite" + localidade + tema (opcional)
+    parts = ['"chat.whatsapp.com/invite"']
     if local: parts.append(local)
+    if tema:  parts.append(tema)
     query = " ".join(parts)
 
     try:
         r = requests.get(
             "https://api.scaleserp.com/search",
-            params={"api_key": api_key, "q": query, "num": 10, "gl": "br", "hl": "pt"},
+            params={"api_key": api_key, "q": query, "num": 20, "gl": "br", "hl": "pt"},
             timeout=15
         )
         data = r.json()
         if data.get("request_info", {}).get("success") is False:
             return jsonify({"ok": False, "error": data.get("request_info", {}).get("message", "Erro ScaleSerp")})
 
+        import re as _re
+        WA_PATTERN = _re.compile(r'https://chat\.whatsapp\.com/invite/[A-Za-z0-9]+')
+
         items   = data.get("organic_results", [])
         results = []
+        seen_links = set()
         for item in items:
-            link = item.get("link", "")
-            # Só aceita links diretos de grupos WhatsApp
-            if "chat.whatsapp.com/invite/" in link or link.startswith("https://chat.whatsapp.com"):
-                results.append({
-                    "title":   item.get("title", "Grupo WhatsApp"),
-                    "snippet": item.get("snippet", ""),
-                    "link":    link,
-                })
+            link    = item.get("link", "")
+            snippet = item.get("snippet", "")
+            title   = item.get("title", "Grupo WhatsApp")
+
+            # Link direto do WhatsApp
+            if "chat.whatsapp.com/invite/" in link:
+                wa_link = link
+            else:
+                # Tenta extrair link do snippet ou título
+                match = WA_PATTERN.search(snippet) or WA_PATTERN.search(title)
+                wa_link = match.group(0) if match else link
+
+            if wa_link in seen_links:
+                continue
+            seen_links.add(wa_link)
+
+            results.append({
+                "title":   title,
+                "snippet": snippet,
+                "link":    wa_link,
+            })
 
         print(f"[buscar_grupos] query={query!r} total={len(results)}")
         return jsonify({"ok": True, "results": results})

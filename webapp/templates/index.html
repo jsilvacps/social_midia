@@ -626,7 +626,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     <div class="card">
       <p class="card-title">🔍 Buscar Grupos de WhatsApp</p>
       <div class="field">
-        <label>Tema / Segmento</label>
+        <label>Tema / Segmento <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
         <input type="text" id="grupos-tema" placeholder="Ex: vendas, imóveis, pet shop…">
       </div>
       <div class="row-2">
@@ -1211,7 +1211,7 @@ async function buscarGrupos() {
   const uf     = estado.value;
   const estadoNome = estado.options[estado.selectedIndex]?.text || "";
   const local  = cidade ? `${cidade} ${uf}` : (uf ? estadoNome : "");
-  if(!tema && !local) { toast("⚠️ Preencha o tema ou localidade"); return; }
+  if(!local) { toast("⚠️ Selecione ao menos o estado ou cidade"); return; }
 
   const btn = document.getElementById("btn-buscar-grupos");
   btn.disabled = true;

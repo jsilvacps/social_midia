@@ -1124,10 +1124,11 @@ def api_ig_test():
 @app.route("/api/grupos/buscar", methods=["POST"])
 @require_login
 def api_buscar_grupos():
-    data  = request.get_json() or {}
-    tema  = data.get("tema", "").strip()
-    local = data.get("local", "").strip()
-    cfg   = load_config()
+    data           = request.get_json() or {}
+    tema           = data.get("tema", "").strip()
+    local          = data.get("local", "").strip()
+    cidades_regiao = data.get("cidades_regiao")   # lista de nomes de cidades da microrregião
+    cfg            = load_config()
 
     api_key = cfg.get("google_api_key", "") or os.getenv("GOOGLE_API_KEY", "")
     if not api_key:
@@ -1142,8 +1143,6 @@ def api_buscar_grupos():
     parts_local = local.split()
     uf        = next((p.upper() for p in parts_local if p.upper() in uf_set), "")
     city      = " ".join(p for p in parts_local if p.upper() != uf).strip()
-    city_slug = re.sub(r'[^a-z0-9]+', '-', city.lower()).strip('-') if city else ""
-    q_local   = f"{local} {tema}".strip()
 
     def _scaleserp(q, num=100):
         try:
@@ -1154,90 +1153,77 @@ def api_buscar_grupos():
         except Exception:
             return []
 
-    def _wa_from_page(url):
-        """Raspa TODOS os links WA de uma página."""
-        try:
-            pg = requests.get(url, timeout=8, headers=UA)
-            if pg.status_code != 200:
-                return []
-            links = []
-            for m in WA_PATTERN.finditer(pg.text):
-                wa = m.group(0).rstrip("\"'\\>")
-                # Extrai nome do contexto ao redor
-                start = max(0, m.start() - 250)
-                ctx   = re.sub(r'<[^>]+>', ' ', pg.text[start:m.start()])
-                words = [w for w in ctx.split() if len(w) > 2]
-                nome  = " ".join(words[-7:]) if words else ""
-                links.append((wa, nome))
-            return links
-        except Exception:
-            return []
+    def _build_locais():
+        """Retorna lista de (city_name, local_string) para pesquisar."""
+        if cidades_regiao and isinstance(cidades_regiao, list):
+            out = []
+            for c in cidades_regiao[:25]:   # limite de 25 cidades para não explodir
+                loc = f"{c} {uf}".strip() if uf else c
+                out.append((c, loc))
+            return out
+        return [(city, local)]
 
     try:
-        seen_codes = set()
-        results    = []
-
-        # ── Query 1: busca direta de links WA em qualquer página ──
-        queries = [
-            f'"chat.whatsapp.com/invite" {q_local}',
-            f'grupos whatsapp {q_local} "chat.whatsapp.com"',
-        ]
-        if tema:
-            queries.insert(0, f'"chat.whatsapp.com/invite" {tema} {city}')
-
-        seen_codes = set()
-        pages_to_scrape = []  # (url, title) para raspar
-
-        for q in queries:
-            for it in _scaleserp(q, num=100):
-                url     = it.get("link", "")
-                title   = it.get("title", "")
-                snippet = it.get("snippet", "")
-
-                # Link WA direto na URL
-                m = WA_PATTERN.search(url)
-                if m:
-                    code = m.group(0).split("/")[-1]
-                    if code not in seen_codes:
-                        seen_codes.add(code)
-                        results.append({"link": m.group(0), "name": title,
-                                        "title": title, "snippet": snippet})
-                    continue
-
-                # Link WA no snippet
-                for m in WA_PATTERN.finditer(snippet):
-                    code = m.group(0).split("/")[-1]
-                    if code not in seen_codes:
-                        seen_codes.add(code)
-                        results.append({"link": m.group(0), "name": title,
-                                        "title": title, "snippet": snippet})
-
-                # Página promissora para raspar (tem "chat.whatsapp" no snippet/título)
-                if ("chat.whatsapp" in snippet or "chat.whatsapp" in title) and \
-                   not any(d in url for d in ("whatsapp.com", "wa.me")):
-                    pages_to_scrape.append((url, title))
-
-        # ── Query 2: site:gruposwhats.app para nomes — retorna link da página como fallback ──
+        seen_codes   = set()
         seen_gw_urls = set()
+        results      = []
         gw_results   = []
-        for q_gw in [f"site:gruposwhats.app {q_local}", f"site:gruposwhats.app {city}"]:
-            for it in _scaleserp(q_gw, num=100):
-                url   = it.get("link", "").rstrip("/")
-                title = it.get("title", "")
-                if url and url not in seen_gw_urls and "/group/" in url:
-                    seen_gw_urls.add(url)
-                    nome = re.sub(r'\s*[|–\-].*$', '', title).strip()
-                    nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or "Grupo WhatsApp"
-                    gw_results.append({"link": url, "name": nome, "title": nome,
-                                       "snippet": it.get("snippet",""), "type": "group_page"})
+        pages_to_scrape = []
 
-        # ── Raspa páginas promissoras para extrair link WA ──
+        for city_name, loc in _build_locais():
+            q_local = f"{loc} {tema}".strip()
+
+            # ── Query 1: busca direta de links WA ──
+            queries = [
+                f'"chat.whatsapp.com/invite" {q_local}',
+                f'grupos whatsapp {q_local} "chat.whatsapp.com"',
+            ]
+            if tema:
+                queries.insert(0, f'"chat.whatsapp.com/invite" {tema} {city_name}')
+
+            for q in queries:
+                for it in _scaleserp(q, num=100):
+                    url     = it.get("link", "")
+                    title   = it.get("title", "")
+                    snippet = it.get("snippet", "")
+
+                    m = WA_PATTERN.search(url)
+                    if m:
+                        code = m.group(0).split("/")[-1]
+                        if code not in seen_codes:
+                            seen_codes.add(code)
+                            results.append({"link": m.group(0), "name": title,
+                                            "title": title, "snippet": snippet})
+                        continue
+
+                    for m in WA_PATTERN.finditer(snippet):
+                        code = m.group(0).split("/")[-1]
+                        if code not in seen_codes:
+                            seen_codes.add(code)
+                            results.append({"link": m.group(0), "name": title,
+                                            "title": title, "snippet": snippet})
+
+                    if ("chat.whatsapp" in snippet or "chat.whatsapp" in title) and \
+                       not any(d in url for d in ("whatsapp.com", "wa.me")):
+                        pages_to_scrape.append((url, title))
+
+            # ── Query 2: site:gruposwhats.app ──
+            for q_gw in [f"site:gruposwhats.app {q_local}", f"site:gruposwhats.app {city_name}"]:
+                for it in _scaleserp(q_gw, num=100):
+                    url   = it.get("link", "").rstrip("/")
+                    title = it.get("title", "")
+                    if url and url not in seen_gw_urls and "/group/" in url:
+                        seen_gw_urls.add(url)
+                        nome = re.sub(r'\s*[|–\-].*$', '', title).strip()
+                        nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or "Grupo WhatsApp"
+                        gw_results.append({"link": url, "name": nome, "title": nome,
+                                           "snippet": it.get("snippet",""), "type": "group_page"})
+
+        # ── Raspa páginas promissoras ──
         for url, title in pages_to_scrape[:15]:
             try:
                 pg = requests.get(url, timeout=7, headers=UA)
-                # Busca em meta tags (og:description, og:url) e no corpo
-                full = pg.text
-                for m in WA_PATTERN.finditer(full):
+                for m in WA_PATTERN.finditer(pg.text):
                     code = m.group(0).split("/")[-1]
                     if code not in seen_codes:
                         seen_codes.add(code)
@@ -1246,13 +1232,10 @@ def api_buscar_grupos():
             except Exception:
                 pass
 
-        # ── Mescla: links diretos primeiro, depois gruposwhats.app ──
-        # Adiciona grupos do gruposwhats.app que não duplicam
         for gr in gw_results:
-            # Só adiciona se ainda não temos muitos diretos
             results.append(gr)
 
-        print(f"[buscar_grupos] diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
+        print(f"[buscar_grupos] cidades={len(_build_locais())} diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})

@@ -657,7 +657,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </select>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="buscarGrupos()" id="btn-buscar-grupos" style="width:100%;margin-top:4px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;margin-top:6px;user-select:none">
+        <input type="checkbox" id="grupos-regiao" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+        🗺️ Incluir cidades da região (microrregião IBGE)
+      </label>
+      <button class="btn btn-primary" onclick="buscarGrupos()" id="btn-buscar-grupos" style="width:100%;margin-top:8px">
         🔍 Buscar Grupos
       </button>
       <button class="btn btn-ghost" onclick="debugGrupos()" style="width:100%;margin-top:6px;font-size:11px">
@@ -1200,7 +1204,7 @@ async function loadCidades(uf) {
   try {
     const cidades = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`).then(r=>r.json());
     sel.innerHTML = "<option value=''>— Todas as cidades —</option>" +
-      cidades.map(c=>`<option value="${c.nome}">${c.nome}</option>`).join("");
+      cidades.map(c=>`<option value="${c.nome}" data-id="${c.id}">${c.nome}</option>`).join("");
     sel.disabled = false;
   } catch(e) {
     sel.innerHTML = "<option value=''>Erro ao carregar</option>";
@@ -1253,12 +1257,13 @@ async function debugGrupos() {
 }
 
 async function buscarGrupos() {
-  const tema   = document.getElementById("grupos-tema").value.trim();
-  const estado = document.getElementById("grupos-estado");
-  const cidade = document.getElementById("grupos-cidade").value;
-  const uf     = estado.value;
+  const tema      = document.getElementById("grupos-tema").value.trim();
+  const estado    = document.getElementById("grupos-estado");
+  const cidadeSel = document.getElementById("grupos-cidade");
+  const cidade    = cidadeSel.value;
+  const uf        = estado.value;
   const estadoNome = estado.options[estado.selectedIndex]?.text || "";
-  const local  = cidade ? `${cidade} ${uf}` : (uf ? estadoNome : "");
+  const local     = cidade ? `${cidade} ${uf}` : (uf ? estadoNome : "");
   if(!local) { toast("⚠️ Selecione ao menos o estado ou cidade"); return; }
 
   const btn = document.getElementById("btn-buscar-grupos");
@@ -1269,10 +1274,29 @@ async function buscarGrupos() {
   document.getElementById("grupos-empty").style.display     = "none";
   document.getElementById("grupos-nokey").style.display     = "none";
 
+  // Região: buscar cidades da microrregião IBGE
+  const useRegiao = document.getElementById("grupos-regiao").checked;
+  let cidades_regiao = null;
+  if(useRegiao && cidade) {
+    const ibgeId = cidadeSel.options[cidadeSel.selectedIndex]?.dataset?.id;
+    if(ibgeId) {
+      try {
+        btn.textContent = "🗺️ Carregando região…";
+        const mun = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/municipios/${ibgeId}`).then(r=>r.json());
+        const microId = mun?.microrregiao?.id;
+        if(microId) {
+          const vizinhos = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/microrregioes/${microId}/municipios`).then(r=>r.json());
+          cidades_regiao = vizinhos.map(c=>c.nome);
+        }
+      } catch(e) { console.warn("Erro ao buscar região:", e); }
+    }
+    btn.textContent = "⏳ Buscando…";
+  }
+
   const resp = await fetch("/api/grupos/buscar", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({tema, local}),
+    body: JSON.stringify({tema, local, cidades_regiao}),
   }).then(r=>r.json());
 
   btn.disabled = false;

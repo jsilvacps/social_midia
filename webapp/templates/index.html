@@ -1387,6 +1387,9 @@ async function deleteBatch(batchId) {
   loadPosts();
 }
 
+// ══ Keep-alive: ping a cada 4 min para evitar cold start no Render ═══════════
+setInterval(() => fetch("/ping").catch(()=>{}), 4 * 60 * 1000);
+
 // ══ SSE Stream ═══════════════════════════════════════════
 function startPostStream() {
   if(postStream) return;

@@ -17,6 +17,8 @@ from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 
+import concurrent.futures
+
 import requests
 from flask import (Flask, Response, jsonify, redirect, render_template,
                    request, send_file, session, stream_with_context, url_for)
@@ -1200,75 +1202,109 @@ def api_buscar_grupos():
             qs_gw = [f"site:gruposwhats.app {q_local}", f"site:gruposwhats.app {city}"]
             return [(city, qs_dir, qs_gw)]
 
+    def _parse_serp_items(items, seen_codes, seen_gw_urls, results, gw_results, pages_to_scrape, mode):
+        """Processa resultados ScaleSerp (thread-safe via lock externo)."""
+        for it in items:
+            url     = it.get("link", "")
+            title   = it.get("title", "")
+            snippet = it.get("snippet", "")
+            if mode == "dir":
+                m = WA_PATTERN.search(url)
+                if m:
+                    code = m.group(0).split("/")[-1]
+                    if code not in seen_codes:
+                        seen_codes.add(code)
+                        results.append({"link": m.group(0), "name": title,
+                                        "title": title, "snippet": snippet})
+                    continue
+                for m in WA_PATTERN.finditer(snippet):
+                    code = m.group(0).split("/")[-1]
+                    if code not in seen_codes:
+                        seen_codes.add(code)
+                        results.append({"link": m.group(0), "name": title,
+                                        "title": title, "snippet": snippet})
+                if ("chat.whatsapp" in snippet or "chat.whatsapp" in title) and \
+                   not any(d in url for d in ("whatsapp.com", "wa.me")):
+                    pages_to_scrape.append((url, title))
+            else:  # gw
+                url = url.rstrip("/")
+                if url and url not in seen_gw_urls and "/group/" in url:
+                    seen_gw_urls.add(url)
+                    nome = re.sub(r'\s*[|–\-].*$', '', title).strip()
+                    nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or "Grupo WhatsApp"
+                    gw_results.append({"link": url, "name": nome, "title": nome,
+                                       "snippet": snippet, "type": "group_page"})
+
     try:
         seen_codes   = set()
         seen_gw_urls = set()
         results      = []
         gw_results   = []
         pages_to_scrape = []
+        lock         = threading.Lock()
 
-        for label, qs_dir, qs_gw in _build_lote_queries():
+        lotes = _build_lote_queries()
 
-            # ── Queries diretas de links WA ──
+        # Monta lista completa de tarefas: (query, mode)
+        tasks = []
+        for _, qs_dir, qs_gw in lotes:
             for q in qs_dir:
-                for it in _scaleserp(q, num=100):
-                    url     = it.get("link", "")
-                    title   = it.get("title", "")
-                    snippet = it.get("snippet", "")
+                tasks.append((q, "dir"))
+            for q in qs_gw:
+                tasks.append((q, "gw"))
 
-                    m = WA_PATTERN.search(url)
-                    if m:
-                        code = m.group(0).split("/")[-1]
-                        if code not in seen_codes:
-                            seen_codes.add(code)
-                            results.append({"link": m.group(0), "name": title,
-                                            "title": title, "snippet": snippet})
-                        continue
+        def _run_task(args):
+            q, mode = args
+            items = _scaleserp(q, num=100)
+            return (items, mode)
 
-                    for m in WA_PATTERN.finditer(snippet):
-                        code = m.group(0).split("/")[-1]
-                        if code not in seen_codes:
-                            seen_codes.add(code)
-                            results.append({"link": m.group(0), "name": title,
-                                            "title": title, "snippet": snippet})
+        # ── Executa todas as queries ScaleSerp em paralelo (máx 8 threads) ──
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            futures = [ex.submit(_run_task, t) for t in tasks]
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    items, mode = fut.result()
+                    with lock:
+                        _parse_serp_items(items, seen_codes, seen_gw_urls,
+                                          results, gw_results, pages_to_scrape, mode)
+                except Exception:
+                    pass
 
-                    if ("chat.whatsapp" in snippet or "chat.whatsapp" in title) and \
-                       not any(d in url for d in ("whatsapp.com", "wa.me")):
-                        pages_to_scrape.append((url, title))
-
-            # ── site:gruposwhats.app ──
-            for q_gw in qs_gw:
-                for it in _scaleserp(q_gw, num=100):
-                    url   = it.get("link", "").rstrip("/")
-                    title = it.get("title", "")
-                    if url and url not in seen_gw_urls and "/group/" in url:
-                        seen_gw_urls.add(url)
-                        nome = re.sub(r'\s*[|–\-].*$', '', title).strip()
-                        nome = re.sub(r'^Grupo de WhatsApp\s*', '', nome).strip() or "Grupo WhatsApp"
-                        gw_results.append({"link": url, "name": nome, "title": nome,
-                                           "snippet": it.get("snippet",""), "type": "group_page"})
-
-        # ── Raspa páginas promissoras ──
-        for url, title in pages_to_scrape[:15]:
+        # ── Raspa páginas promissoras em paralelo (máx 8 threads) ──
+        def _scrape(args):
+            url, title = args
             try:
-                pg = requests.get(url, timeout=7, headers=UA)
+                pg = requests.get(url, timeout=5, headers=UA)
+                found = []
                 for m in WA_PATTERN.finditer(pg.text):
-                    code = m.group(0).split("/")[-1]
-                    if code not in seen_codes:
-                        seen_codes.add(code)
-                        results.append({"link": m.group(0), "name": title,
-                                        "title": title, "snippet": ""})
+                    found.append((m.group(0), title))
+                return found
             except Exception:
-                pass
+                return []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(_scrape, t) for t in pages_to_scrape[:15]]
+            for fut in concurrent.futures.as_completed(futs):
+                for wa_link, title in fut.result():
+                    code = wa_link.split("/")[-1]
+                    with lock:
+                        if code not in seen_codes:
+                            seen_codes.add(code)
+                            results.append({"link": wa_link, "name": title,
+                                            "title": title, "snippet": ""})
 
         for gr in gw_results:
             results.append(gr)
 
-        lotes = _build_lote_queries()
-        print(f"[buscar_grupos] lotes={len(lotes)} diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
+        print(f"[buscar_grupos] lotes={len(lotes)} tasks={len(tasks)} diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
+
+# ── Keep-alive (evita cold start no Render free) ────────────────────────────────
+@app.route("/ping")
+def ping():
+    return "pong", 200
 
 # ── User profile ────────────────────────────────────────────────────────────────
 @app.route("/api/me")

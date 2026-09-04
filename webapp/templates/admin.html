@@ -244,7 +244,8 @@
                   background:rgba(59,130,246,.15);color:#3b82f6">
                   ⏳ vence {{ u.trial_expires_at[:10] }}
                 </span>
-                <button onclick="extendTrial({{ u.id }}, this)" style="margin-left:4px;font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(0,229,160,.4);background:transparent;color:#00e5a0;cursor:pointer">+3d</button>
+                <button onclick="extendTrial({{ u.id }}, 3, this)" style="margin-left:4px;font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(0,229,160,.4);background:transparent;color:#00e5a0;cursor:pointer">+3d</button>
+                <button onclick="extendTrial({{ u.id }}, 15, this)" style="margin-left:2px;font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(139,92,246,.4);background:transparent;color:#8b5cf6;cursor:pointer">+15d</button>
               </div>
             {% endif %}
           </td>
@@ -393,24 +394,23 @@ document.getElementById("cfg-modal").addEventListener("click", function(e) {
   if(e.target === this) closeConfig();
 });
 
-async function extendTrial(uid, btn) {
+async function extendTrial(uid, days, btn) {
+  const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = "…";
   const r = await fetch(`/admin/users/${uid}/extend-trial`, {
     method: "POST",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({days: 3})
+    body: JSON.stringify({days})
   }).then(r=>r.json());
+  btn.textContent = orig;
+  btn.disabled = false;
   if(r.ok) {
     const badge = document.getElementById(`trial-badge-${uid}`);
     if(badge) badge.textContent = `⏳ vence ${r.trial_expires_at}`;
-    btn.textContent = "+3d";
-    btn.disabled = false;
-    toast("✅ Trial estendido por +3 dias!");
+    toast(`✅ Trial estendido por +${days} dias!`);
   } else {
     toast("❌ " + r.error);
-    btn.textContent = "+3d";
-    btn.disabled = false;
   }
 }
 

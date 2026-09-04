@@ -66,14 +66,21 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     # Tabela de usuários
     conn.execute("""CREATE TABLE IF NOT EXISTS users (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        email         TEXT    UNIQUE NOT NULL,
-        password_hash TEXT    NOT NULL,
-        name          TEXT    DEFAULT '',
-        plan          TEXT    DEFAULT 'trial',
-        is_admin      INTEGER DEFAULT 0,
-        created_at    TEXT    DEFAULT (datetime('now'))
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        email           TEXT    UNIQUE NOT NULL,
+        password_hash   TEXT    NOT NULL,
+        name            TEXT    DEFAULT '',
+        plan            TEXT    DEFAULT 'trial',
+        is_admin        INTEGER DEFAULT 0,
+        created_at      TEXT    DEFAULT (datetime('now')),
+        trial_expires_at TEXT   DEFAULT NULL
     )""")
+    # migration: adiciona coluna se não existir
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN trial_expires_at TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass
     # Config por usuário
     conn.execute("""CREATE TABLE IF NOT EXISTS user_configs (
         user_id     INTEGER PRIMARY KEY,
@@ -179,6 +186,23 @@ def require_login(f):
                 return jsonify({"ok": False, "error": "Conta inativa. Entre em contato com o suporte."}), 403
             session.clear()
             return redirect("/login?msg=inactive")
+        # Verifica expiração do trial
+        if u["plan"] == "trial" and u.get("trial_expires_at"):
+            from datetime import datetime as _dt
+            try:
+                expires = _dt.fromisoformat(u["trial_expires_at"])
+                if _dt.utcnow() > expires:
+                    # Expirou — bloqueia automaticamente
+                    conn2 = db()
+                    conn2.execute("UPDATE users SET plan='inactive' WHERE id=?", (u["id"],))
+                    conn2.commit()
+                    conn2.close()
+                    session.clear()
+                    if request.path.startswith("/api/"):
+                        return jsonify({"ok": False, "error": "Trial expirado. Entre em contato para continuar."}), 403
+                    return redirect("/login?msg=trial_expired")
+            except Exception:
+                pass
         return f(*args, **kwargs)
     return wrapper
 
@@ -625,7 +649,12 @@ def login():
         next_url = request.args.get("next", "/")
         return redirect(next_url)
     tab = request.args.get("tab", "login")
-    error_msg = "Conta inativa. Entre em contato com o suporte." if msg == "inactive" else ""
+    if msg == "inactive":
+        error_msg = "Conta inativa. Entre em contato com o suporte."
+    elif msg == "trial_expired":
+        error_msg = "⏰ Seu período de teste de 3 dias expirou. Entre em contato para continuar usando o ZapShot."
+    else:
+        error_msg = ""
     return render_template("login.html", error=error_msg, tab=tab)
 
 @app.route("/register", methods=["POST"])
@@ -646,10 +675,12 @@ def register():
     # Primeiro usuário vira admin automaticamente
     count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     is_admin = 1 if count == 0 else 0
+    from datetime import datetime as _dt, timedelta as _td
+    trial_exp = (_dt.utcnow() + _td(days=3)).strftime("%Y-%m-%dT%H:%M:%S") if not is_admin else None
     try:
         conn.execute(
-            "INSERT INTO users (email, password_hash, name, plan, is_admin) VALUES (?,?,?,?,?)",
-            (email, _hash_pw(password), name, "trial", is_admin)
+            "INSERT INTO users (email, password_hash, name, plan, is_admin, trial_expires_at) VALUES (?,?,?,?,?,?)",
+            (email, _hash_pw(password), name, "trial" if not is_admin else "active", is_admin, trial_exp)
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -695,6 +726,30 @@ def admin_set_plan(uid):
     conn.commit()
     conn.close()
     return redirect("/admin")
+
+@app.route("/admin/users/<int:uid>/extend-trial", methods=["POST"])
+@require_admin
+def admin_extend_trial(uid):
+    from datetime import datetime as _dt, timedelta as _td
+    data = request.get_json() or {}
+    days = int(data.get("days", 3))
+    conn = db()
+    u = conn.execute("SELECT trial_expires_at, plan FROM users WHERE id=?", (uid,)).fetchone()
+    if not u:
+        conn.close()
+        return jsonify({"ok": False, "error": "Usuário não encontrado"})
+    # Parte da data atual de vencimento ou de hoje
+    try:
+        base = _dt.fromisoformat(u["trial_expires_at"]) if u["trial_expires_at"] else _dt.utcnow()
+        if base < _dt.utcnow():
+            base = _dt.utcnow()
+    except Exception:
+        base = _dt.utcnow()
+    new_exp = (base + _td(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    conn.execute("UPDATE users SET trial_expires_at=?, plan='trial' WHERE id=?", (new_exp, uid))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "trial_expires_at": new_exp[:10]})
 
 @app.route("/admin/users/<int:uid>/admin", methods=["POST"])
 @require_admin
@@ -771,10 +826,20 @@ def api_admin_stats():
 @require_login
 def index():
     u = get_current_user()
+    # Calcula dias restantes do trial
+    trial_days_left = None
+    if u and u.get("plan") == "trial" and u.get("trial_expires_at"):
+        from datetime import datetime as _dt
+        try:
+            diff = _dt.fromisoformat(u["trial_expires_at"]) - _dt.utcnow()
+            trial_days_left = max(0, diff.days)
+        except Exception:
+            pass
     return render_template("index.html", current_user=u,
                            has_grupos=user_has_feature(u, "grupos") if u else False,
                            has_instagram=user_has_feature(u, "instagram") if u else False,
-                           has_wa_status=user_has_feature(u, "wa_status") if u else False)
+                           has_wa_status=user_has_feature(u, "wa_status") if u else False,
+                           trial_days_left=trial_days_left)
 
 # ── Media serve (público – Evolution API chama de fora) ───────────────────────
 @app.route("/api/media/<filename>")

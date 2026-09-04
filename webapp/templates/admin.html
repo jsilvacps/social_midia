@@ -236,7 +236,18 @@
             </div>
           </td>
           <td>{{ u.posts_count }}</td>
-          <td style="color:var(--muted);font-size:12px">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+          <td style="color:var(--muted);font-size:12px">
+            {{ u.created_at[:10] if u.created_at else '—' }}
+            {% if u.plan == 'trial' and u.trial_expires_at %}
+              <div style="margin-top:3px">
+                <span id="trial-badge-{{ u.id }}" style="font-size:10px;padding:2px 6px;border-radius:4px;
+                  background:rgba(59,130,246,.15);color:#3b82f6">
+                  ⏳ vence {{ u.trial_expires_at[:10] }}
+                </span>
+                <button onclick="extendTrial({{ u.id }}, this)" style="margin-left:4px;font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(0,229,160,.4);background:transparent;color:#00e5a0;cursor:pointer">+3d</button>
+              </div>
+            {% endif %}
+          </td>
           <td>
             <div class="actions">
               {% if not u.is_admin or u.id != current_user.id %}
@@ -381,6 +392,27 @@ async function saveConfig() {
 document.getElementById("cfg-modal").addEventListener("click", function(e) {
   if(e.target === this) closeConfig();
 });
+
+async function extendTrial(uid, btn) {
+  btn.disabled = true;
+  btn.textContent = "…";
+  const r = await fetch(`/admin/users/${uid}/extend-trial`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({days: 3})
+  }).then(r=>r.json());
+  if(r.ok) {
+    const badge = document.getElementById(`trial-badge-${uid}`);
+    if(badge) badge.textContent = `⏳ vence ${r.trial_expires_at}`;
+    btn.textContent = "+3d";
+    btn.disabled = false;
+    toast("✅ Trial estendido por +3 dias!");
+  } else {
+    toast("❌ " + r.error);
+    btn.textContent = "+3d";
+    btn.disabled = false;
+  }
+}
 
 const FEAT_LABELS = {
   grupos:     { ico: "🔍", name: "Grupos" },

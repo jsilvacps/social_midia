@@ -319,9 +319,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   <div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
     👤 <span id="sidebar-username">{{ current_user.name or current_user.email }}</span>
     <span id="sidebar-plan-badge" style="font-size:10px;padding:1px 7px;border-radius:20px;margin-left:4px;
-      background:{% if current_user.plan=='active' %}rgba(0,229,160,.15){% else %}rgba(59,130,246,.15){% endif %};
-      color:{% if current_user.plan=='active' %}#00e5a0{% else %}#3b82f6{% endif %}">
-      {{ current_user.plan }}
+      background:{% if current_user.plan=='active' %}rgba(0,229,160,.15){% elif trial_days_left is not none and trial_days_left <= 1 %}rgba(239,68,68,.15){% else %}rgba(59,130,246,.15){% endif %};
+      color:{% if current_user.plan=='active' %}#00e5a0{% elif trial_days_left is not none and trial_days_left <= 1 %}#ef4444{% else %}#3b82f6{% endif %}">
+      {% if trial_days_left is not none %}⏳ {{ trial_days_left }}d restante{% else %}{{ current_user.plan }}{% endif %}
     </span>
   </div>
   <div style="display:flex;gap:6px;margin-top:8px">
@@ -352,6 +352,27 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 </header>
 
 <main id="main">
+
+{% if trial_days_left is not none %}
+<div style="margin:0 0 12px;padding:10px 16px;border-radius:10px;display:flex;align-items:center;gap:10px;
+  {% if trial_days_left <= 1 %}background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#ef4444{% else %}background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);color:#3b82f6{% endif %}">
+  <span style="font-size:20px">⏳</span>
+  <div style="flex:1">
+    {% if trial_days_left == 0 %}
+      <strong>Último dia de teste!</strong> Seu trial expira hoje. Entre em contato para continuar usando.
+    {% elif trial_days_left == 1 %}
+      <strong>Falta 1 dia</strong> para o fim do seu período de teste.
+    {% else %}
+      Você está no período de teste — <strong>{{ trial_days_left }} dias restantes</strong>.
+    {% endif %}
+  </div>
+  <a href="https://wa.me/5511999999999" target="_blank" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:6px;text-decoration:none;
+    {% if trial_days_left <= 1 %}background:#ef4444;color:#fff{% else %}background:rgba(59,130,246,.2);color:#3b82f6{% endif %}">
+    Contratar ↗
+  </a>
+</div>
+{% endif %}
+
 
   <!-- ══ Tab: Criar ══════════════════════════════════════════ -->
   <section class="tab active" id="tab-criar">

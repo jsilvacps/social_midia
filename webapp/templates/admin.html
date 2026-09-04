@@ -214,12 +214,26 @@
           </td>
           <td>
             {% set feats = u.features | default('[]') | tojson if u.features else '[]' %}
-            <button onclick="toggleFeature({{ u.id }}, 'grupos', this)"
-                    class="btn btn-sm {% if 'grupos' in (u.features or '') %}btn-success{% else %}btn-ghost{% endif %}"
-                    title="Liberar/revogar busca de grupos"
-                    data-active="{% if 'grupos' in (u.features or '') %}1{% else %}0{% endif %}">
-              🔍 {% if 'grupos' in (u.features or '') %}Grupos ✓{% else %}Grupos{% endif %}
-            </button>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <button onclick="toggleFeature({{ u.id }}, 'grupos', this)"
+                      class="btn btn-sm {% if 'grupos' in (u.features or '') %}btn-success{% else %}btn-ghost{% endif %}"
+                      title="Liberar/revogar busca de grupos"
+                      data-active="{% if 'grupos' in (u.features or '') %}1{% else %}0{% endif %}">
+                🔍 {% if 'grupos' in (u.features or '') %}Grupos ✓{% else %}Grupos{% endif %}
+              </button>
+              <button onclick="toggleFeature({{ u.id }}, 'instagram', this)"
+                      class="btn btn-sm {% if 'instagram' in (u.features or '') %}btn-success{% else %}btn-ghost{% endif %}"
+                      title="Liberar/revogar Instagram"
+                      data-active="{% if 'instagram' in (u.features or '') %}1{% else %}0{% endif %}">
+                📷 {% if 'instagram' in (u.features or '') %}Instagram ✓{% else %}Instagram{% endif %}
+              </button>
+              <button onclick="toggleFeature({{ u.id }}, 'wa_status', this)"
+                      class="btn btn-sm {% if 'wa_status' in (u.features or '') %}btn-success{% else %}btn-ghost{% endif %}"
+                      title="Liberar/revogar WhatsApp Status"
+                      data-active="{% if 'wa_status' in (u.features or '') %}1{% else %}0{% endif %}">
+                🟢 {% if 'wa_status' in (u.features or '') %}WA Status ✓{% else %}WA Status{% endif %}
+              </button>
+            </div>
           </td>
           <td>{{ u.posts_count }}</td>
           <td style="color:var(--muted);font-size:12px">{{ u.created_at[:10] if u.created_at else '—' }}</td>
@@ -368,17 +382,23 @@ document.getElementById("cfg-modal").addEventListener("click", function(e) {
   if(e.target === this) closeConfig();
 });
 
+const FEAT_LABELS = {
+  grupos:     { ico: "🔍", name: "Grupos" },
+  instagram:  { ico: "📷", name: "Instagram" },
+  wa_status:  { ico: "🟢", name: "WA Status" },
+};
 async function toggleFeature(uid, feat, btn) {
   const r = await fetch(`/admin/users/${uid}/feature/${feat}`, {method:"POST"}).then(r=>r.json());
   if(!r.ok) { toast("❌ " + r.error); return; }
+  const lbl = FEAT_LABELS[feat] || { ico: "⚙️", name: feat };
   if(r.active) {
     btn.className = btn.className.replace("btn-ghost","btn-success");
-    btn.textContent = "🔍 Grupos ✓";
-    toast("✅ Busca de grupos ATIVADA");
+    btn.textContent = `${lbl.ico} ${lbl.name} ✓`;
+    toast(`✅ ${lbl.name} ATIVADO`);
   } else {
     btn.className = btn.className.replace("btn-success","btn-ghost");
-    btn.textContent = "🔍 Grupos";
-    toast("🔒 Busca de grupos desativada");
+    btn.textContent = `${lbl.ico} ${lbl.name}`;
+    toast(`🔒 ${lbl.name} desativado`);
   }
 }
 

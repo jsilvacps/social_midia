@@ -197,6 +197,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .dest-item.active-wa .dest-check{background:var(--wa);border-color:var(--wa)}
 .dest-item.active-ig .dest-check{background:var(--ig);border-color:var(--ig)}
 .dest-item.disabled{opacity:.4;cursor:not-allowed}
+.dest-item.dest-locked{opacity:.5;cursor:not-allowed;filter:grayscale(.5)}
+.lock-badge{font-size:11px;background:#2a1a00;color:#f0a030;border:1px solid #f0a030;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle}
 
 /* WA Group Selector */
 #wa-group-section{display:none}
@@ -424,6 +426,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
 
         <!-- IG Feed -->
+        {% if has_instagram %}
         <div class="dest-item" id="dest-ig-feed" onclick="toggleDest('ig-feed')">
           <span class="dest-ico">📷</span>
           <div class="dest-body">
@@ -438,7 +441,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           <span class="dest-ico">⭕</span>
           <div class="dest-body">
             <div class="dest-name">Instagram Stories</div>
-            <div class="dest-sub">Expira em 24 horas</div>
+            <div class="dest-sub">MP4 9:16 – expira em 24h</div>
           </div>
           <div class="dest-check" id="check-ig-stories">✓</div>
         </div>
@@ -448,12 +451,36 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           <span class="dest-ico">🎬</span>
           <div class="dest-body">
             <div class="dest-name">Instagram Reels</div>
-            <div class="dest-sub" id="dest-reels-sub">Apenas para vídeos</div>
+            <div class="dest-sub">MP4 9:16 – apenas vídeo</div>
           </div>
           <div class="dest-check" id="check-ig-reels">✓</div>
         </div>
+        {% else %}
+        <div class="dest-item dest-locked" title="Recurso disponível via upgrade">
+          <span class="dest-ico">📷</span>
+          <div class="dest-body">
+            <div class="dest-name">Instagram Feed <span class="lock-badge">🔒 Premium</span></div>
+            <div class="dest-sub">Disponível via upgrade</div>
+          </div>
+        </div>
+        <div class="dest-item dest-locked" title="Recurso disponível via upgrade">
+          <span class="dest-ico">⭕</span>
+          <div class="dest-body">
+            <div class="dest-name">Instagram Stories <span class="lock-badge">🔒 Premium</span></div>
+            <div class="dest-sub">Disponível via upgrade</div>
+          </div>
+        </div>
+        <div class="dest-item dest-locked" title="Recurso disponível via upgrade">
+          <span class="dest-ico">🎬</span>
+          <div class="dest-body">
+            <div class="dest-name">Instagram Reels <span class="lock-badge">🔒 Premium</span></div>
+            <div class="dest-sub">Disponível via upgrade</div>
+          </div>
+        </div>
+        {% endif %}
 
         <!-- WA Status -->
+        {% if has_wa_status %}
         <div class="dest-item" id="dest-wa-status" onclick="toggleDest('wa-status')">
           <span class="dest-ico">🟢</span>
           <div class="dest-body">
@@ -462,6 +489,15 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
           </div>
           <div class="dest-check" id="check-wa-status">✓</div>
         </div>
+        {% else %}
+        <div class="dest-item dest-locked" title="Recurso disponível via upgrade">
+          <span class="dest-ico">🟢</span>
+          <div class="dest-body">
+            <div class="dest-name">WhatsApp Status <span class="lock-badge">🔒 Premium</span></div>
+            <div class="dest-sub">Disponível via upgrade</div>
+          </div>
+        </div>
+        {% endif %}
 
       </div>
     </div>
@@ -917,15 +953,23 @@ function clearFile() {
 }
 
 function updateReelsAvailability(isVideo) {
-  const reelsEl = document.getElementById("dest-ig-reels");
-  const sub     = document.getElementById("dest-reels-sub");
-  if(isVideo) {
-    reelsEl.classList.remove("disabled");
-    sub.textContent = "Vídeo curto no Instagram";
-  } else {
-    reelsEl.classList.add("disabled");
-    if(dests["ig-reels"]) toggleDest("ig-reels"); // desseleciona
-    sub.textContent = "Apenas para vídeos";
+  const reelsEl   = document.getElementById("dest-ig-reels");
+  const storiesEl = document.getElementById("dest-ig-stories");
+  if(reelsEl) {
+    if(isVideo) {
+      reelsEl.classList.remove("disabled");
+    } else {
+      reelsEl.classList.add("disabled");
+      if(dests["ig-reels"]) toggleDest("ig-reels");
+    }
+  }
+  if(storiesEl) {
+    if(isVideo) {
+      storiesEl.classList.remove("disabled");
+    } else {
+      storiesEl.classList.add("disabled");
+      if(dests["ig-stories"]) toggleDest("ig-stories");
+    }
   }
 }
 

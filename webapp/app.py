@@ -366,13 +366,16 @@ def wa_send(group_id, caption, filepath, media_type, cfg, db_filename=""):
 def wa_send_status(caption, filepath, media_type, cfg, db_filename=""):
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
-    app_url  = cfg.get("app_url", "").rstrip("/")
+    app_url  = (cfg.get("app_url") or "https://social-midia.onrender.com").rstrip("/")
     if db_filename:
         media_url = f"{app_url}/api/library/file/{db_filename}"
-    else:
+    elif filepath:
         media_url = f"{app_url}/api/media/{filepath.name}"
+    else:
+        return False, "Sem arquivo de mídia"
     stype = "video" if media_type == "video" else "image"
-    body  = {"type": stype, "content": media_url, "caption": caption, "allContacts": True}
+    # Tenta endpoint sendStatus (Evolution API v2)
+    body = {"type": stype, "content": media_url, "caption": caption, "allContacts": True}
     try:
         r = requests.post(
             f"{base}/message/sendStatus/{instance}",
@@ -380,9 +383,27 @@ def wa_send_status(caption, filepath, media_type, cfg, db_filename=""):
             json=body,
             timeout=120
         )
+        print(f"[wa_status] sendStatus status={r.status_code} body={r.text[:300]}")
         if r.status_code in (200, 201):
             return True, ""
-        return False, f"HTTP {r.status_code}: {r.text[:300]}"
+        # Fallback: tenta via sendMedia para status@broadcast
+        body2 = {
+            "number": "status@broadcast",
+            "mediatype": stype,
+            "mimetype": "video/mp4" if stype == "video" else "image/jpeg",
+            "caption": caption,
+            "media": media_url,
+        }
+        r2 = requests.post(
+            f"{base}/message/sendMedia/{instance}",
+            headers=_evo_headers(cfg),
+            json=body2,
+            timeout=120
+        )
+        print(f"[wa_status] sendMedia@broadcast status={r2.status_code} body={r2.text[:300]}")
+        if r2.status_code in (200, 201):
+            return True, ""
+        return False, f"sendStatus: HTTP {r.status_code} | sendMedia: HTTP {r2.status_code}: {r2.text[:200]}"
     except Exception as exc:
         return False, str(exc)
 
@@ -751,7 +772,9 @@ def api_admin_stats():
 def index():
     u = get_current_user()
     return render_template("index.html", current_user=u,
-                           has_grupos=user_has_feature(u, "grupos") if u else False)
+                           has_grupos=user_has_feature(u, "grupos") if u else False,
+                           has_instagram=user_has_feature(u, "instagram") if u else False,
+                           has_wa_status=user_has_feature(u, "wa_status") if u else False)
 
 # ── Media serve (público – Evolution API chama de fora) ───────────────────────
 @app.route("/api/media/<filename>")
@@ -998,10 +1021,11 @@ def api_create_post():
     media_type = data.get("media_type", "image")
     caption    = data.get("caption", "")
     wa_groups  = data.get("wa_groups", [])
-    ig_feed    = int(bool(data.get("ig_feed")))
-    ig_stories = int(bool(data.get("ig_stories")))
-    ig_reels   = int(bool(data.get("ig_reels")))
-    wa_status  = int(bool(data.get("wa_status")))
+    u = get_current_user()
+    ig_feed    = int(bool(data.get("ig_feed")))    if user_has_feature(u, "instagram") else 0
+    ig_stories = int(bool(data.get("ig_stories"))) if user_has_feature(u, "instagram") else 0
+    ig_reels   = int(bool(data.get("ig_reels")))   if user_has_feature(u, "instagram") else 0
+    wa_status  = int(bool(data.get("wa_status")))  if user_has_feature(u, "wa_status")  else 0
     scheduled_at = data.get("scheduled_at", "")
 
     library = data.get("library", "")

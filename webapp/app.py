@@ -109,7 +109,7 @@ def init_db():
         imported_at TEXT    DEFAULT (datetime('now')),
         UNIQUE(user_id, group_jid)
     )""")
-    # Migrations
+    # Migrations — posts
     for col, defval in [
         ("batch_id",    "''"),
         ("batch_title", "''"),
@@ -120,6 +120,11 @@ def init_db():
             conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
         except Exception:
             pass
+    # Migration — users: coluna features (JSON array de strings)
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN features TEXT DEFAULT '[]'")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -185,6 +190,31 @@ def require_admin(f):
             return redirect("/login")
         return f(*args, **kwargs)
     return wrapper
+
+def user_has_feature(u, feature: str) -> bool:
+    """Retorna True se o usuário tem a feature ativa ou é admin."""
+    if u.get("is_admin"):
+        return True
+    try:
+        features = json.loads(u.get("features") or "[]")
+        return feature in features
+    except Exception:
+        return False
+
+def require_feature(feature: str):
+    """Decorator que bloqueia acesso se o usuário não tiver a feature."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            u = get_current_user()
+            if not u:
+                return jsonify({"ok": False, "error": "not_authenticated"}), 401
+            if not user_has_feature(u, feature):
+                return jsonify({"ok": False, "error": "feature_locked",
+                                "msg": "Recurso não disponível no seu plano."}), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # ── Config por usuário ─────────────────────────────────────────────────────────
 def load_config(user_id=None) -> dict:
@@ -659,6 +689,34 @@ def admin_toggle_admin(uid):
     conn.close()
     return redirect("/admin")
 
+@app.route("/admin/users/<int:uid>/feature/<feat>", methods=["POST"])
+@require_admin
+def admin_toggle_feature(uid, feat):
+    """Ativa ou desativa uma feature para um usuário."""
+    ALLOWED_FEATURES = {"grupos"}
+    if feat not in ALLOWED_FEATURES:
+        return jsonify({"ok": False, "error": "Feature inválida"}), 400
+    conn = db()
+    row = conn.execute("SELECT features FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "Usuário não encontrado"}), 404
+    try:
+        features = json.loads(row["features"] or "[]")
+    except Exception:
+        features = []
+    if feat in features:
+        features.remove(feat)
+        active = False
+    else:
+        features.append(feat)
+        active = True
+    conn.execute("UPDATE users SET features=? WHERE id=?", (json.dumps(features), uid))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "active": active, "features": features})
+
+
 @app.route("/admin/users/<int:uid>", methods=["DELETE", "POST"])
 @require_admin
 def admin_delete_user(uid):
@@ -691,7 +749,9 @@ def api_admin_stats():
 @app.route("/")
 @require_login
 def index():
-    return render_template("index.html", current_user=get_current_user())
+    u = get_current_user()
+    return render_template("index.html", current_user=u,
+                           has_grupos=user_has_feature(u, "grupos") if u else False)
 
 # ── Media serve (público – Evolution API chama de fora) ───────────────────────
 @app.route("/api/media/<filename>")
@@ -1076,6 +1136,7 @@ def api_evo_test():
 
 @app.route("/api/grupos/debug", methods=["POST"])
 @require_login
+@require_feature("grupos")
 def api_grupos_debug():
     """Diagnóstico completo: ScaleSerp + raspagem direta."""
     data    = request.get_json() or {}
@@ -1176,6 +1237,7 @@ def api_grupos_debug():
 
 @app.route("/api/grupos/nome", methods=["POST"])
 @require_login
+@require_feature("grupos")
 def api_grupo_nome():
     """Busca o nome real do grupo WhatsApp pela página de convite."""
     link = (request.get_json() or {}).get("link", "")
@@ -1217,6 +1279,7 @@ def api_ig_test():
 # ── Busca de Grupos WhatsApp ────────────────────────────────────────────────────
 @app.route("/api/grupos/buscar", methods=["POST"])
 @require_login
+@require_feature("grupos")
 def api_buscar_grupos():
     data           = request.get_json() or {}
     tema           = data.get("tema", "").strip()

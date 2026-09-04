@@ -301,9 +301,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   <button onclick="switchTab('midia',this);loadLibrary()">
     <span class="icon">🖼️</span>MÍDIA
   </button>
+  {% if has_grupos %}
   <button onclick="switchTab('grupos',this)">
     <span class="icon">🔍</span>GRUPOS
   </button>
+  {% endif %}
   <button onclick="switchTab('config',this)">
     <span class="icon">⚙️</span>CONFIG
   </button>
@@ -706,9 +708,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   <button onclick="switchTab('midia',this);loadLibrary()">
     <span class="icon">🖼️</span>MÍDIA
   </button>
+  {% if has_grupos %}
   <button onclick="switchTab('grupos',this)">
     <span class="icon">🔍</span>GRUPOS
   </button>
+  {% endif %}
   <button onclick="switchTab('config',this)">
     <span class="icon">⚙️</span>CONFIG
   </button>

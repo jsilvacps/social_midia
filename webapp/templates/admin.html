@@ -188,6 +188,7 @@
           <th>#</th>
           <th>Nome / Email</th>
           <th>Plano</th>
+          <th>Features</th>
           <th>Disparos</th>
           <th>Cadastro</th>
           <th>Ações</th>
@@ -210,6 +211,15 @@
                 <option value="inactive" {% if u.plan=='inactive' %}selected{% endif %}>🔴 Inativo</option>
               </select>
             </form>
+          </td>
+          <td>
+            {% set feats = u.features | default('[]') | tojson if u.features else '[]' %}
+            <button onclick="toggleFeature({{ u.id }}, 'grupos', this)"
+                    class="btn btn-sm {% if 'grupos' in (u.features or '') %}btn-success{% else %}btn-ghost{% endif %}"
+                    title="Liberar/revogar busca de grupos"
+                    data-active="{% if 'grupos' in (u.features or '') %}1{% else %}0{% endif %}">
+              🔍 {% if 'grupos' in (u.features or '') %}Grupos ✓{% else %}Grupos{% endif %}
+            </button>
           </td>
           <td>{{ u.posts_count }}</td>
           <td style="color:var(--muted);font-size:12px">{{ u.created_at[:10] if u.created_at else '—' }}</td>
@@ -272,6 +282,20 @@ function toast(msg, ms=3000) {
   el.textContent = msg;
   el.style.display = "block";
   setTimeout(() => el.style.display = "none", ms);
+}
+
+async function toggleFeature(uid, feat, btn) {
+  const r = await fetch(`/admin/users/${uid}/feature/${feat}`, {method:"POST"}).then(r=>r.json());
+  if(!r.ok) { toast("❌ " + r.error); return; }
+  if(r.active) {
+    btn.className = btn.className.replace("btn-ghost","btn-success");
+    btn.textContent = "🔍 Grupos ✓";
+    toast("✅ Busca de grupos ATIVADA");
+  } else {
+    btn.className = btn.className.replace("btn-success","btn-ghost");
+    btn.textContent = "🔍 Grupos";
+    toast("🔒 Busca de grupos desativada");
+  }
 }
 
 async function deleteUser(id, email) {

@@ -99,6 +99,16 @@ def init_db():
         batch_id     TEXT    DEFAULT '',
         batch_title  TEXT    DEFAULT ''
     )""")
+    # Grupos importados do WhatsApp dos usuários
+    conn.execute("""CREATE TABLE IF NOT EXISTS wa_imported_groups (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        group_jid   TEXT    NOT NULL,
+        name        TEXT    DEFAULT '',
+        invite_link TEXT    DEFAULT '',
+        imported_at TEXT    DEFAULT (datetime('now')),
+        UNIQUE(user_id, group_jid)
+    )""")
     # Migrations
     for col, defval in [
         ("batch_id",    "''"),
@@ -797,6 +807,52 @@ def api_library_debug(filename):
     return jsonify({"exists": exists, "size": size, "path": str(path), "head_hex": head_hex})
 
 # ── WhatsApp groups ─────────────────────────────────────────────────────────────
+def _salvar_grupos_silencioso(cfg, uid, groups):
+    """Salva grupos no banco em background sem travar a resposta."""
+    base    = cfg.get("evo_url", "").rstrip("/")
+    inst    = cfg.get("evo_instance", "")
+    headers = _evo_headers(cfg)
+
+    def _get_invite(jid):
+        try:
+            r = requests.get(f"{base}/group/inviteCode/{inst}?groupJid={jid}",
+                             headers=headers, timeout=6)
+            d = r.json()
+            code = d.get("inviteCode") or d.get("code") or ""
+            return f"https://chat.whatsapp.com/{code}" if code else ""
+        except Exception:
+            return ""
+
+    conn = db()
+    try:
+        # Busca invite links em paralelo (máx 8 threads)
+        jids = [g["id"] for g in groups]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            links = list(ex.map(_get_invite, jids))
+
+        for g, link in zip(groups, links):
+            jid  = g["id"]
+            name = g["name"]
+            existing = conn.execute(
+                "SELECT id FROM wa_imported_groups WHERE user_id=? AND group_jid=?", (uid, jid)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE wa_imported_groups SET name=?, invite_link=?, imported_at=datetime('now') WHERE user_id=? AND group_jid=?",
+                    (name, link, uid, jid)
+                )
+            else:
+                conn.execute(
+                    "INSERT OR IGNORE INTO wa_imported_groups (user_id, group_jid, name, invite_link) VALUES (?,?,?,?)",
+                    (uid, jid, name, link)
+                )
+        conn.commit()
+    except Exception as e:
+        print(f"[grupos_silencioso] erro: {e}")
+    finally:
+        conn.close()
+
+
 @app.route("/api/wa/groups")
 @require_login
 def api_wa_groups():
@@ -804,6 +860,12 @@ def api_wa_groups():
     groups, err = wa_get_groups(cfg)
     if err and not groups:
         return jsonify({"ok": False, "error": err})
+
+    # Salva grupos em background (não bloqueia a resposta)
+    uid = session["user_id"]
+    t = threading.Thread(target=_salvar_grupos_silencioso, args=(cfg, uid, groups), daemon=True)
+    t.start()
+
     return jsonify({"ok": True, "groups": groups})
 
 @app.route("/api/wa/test-text")
@@ -1300,6 +1362,120 @@ def api_buscar_grupos():
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
+
+# ── Importar grupos do WhatsApp do usuário ──────────────────────────────────────
+@app.route("/api/grupos/importar-wa", methods=["POST"])
+@require_login
+def api_importar_grupos_wa():
+    """Busca todos os grupos via Evolution API e salva no banco."""
+    cfg     = load_config()
+    evo_url = (cfg.get("evo_url") or os.getenv("EVO_URL", "")).rstrip("/")
+    evo_tok = cfg.get("evo_token") or os.getenv("EVO_TOKEN", "")
+    inst    = cfg.get("evo_instance") or os.getenv("EVO_INSTANCE", "")
+    if not evo_url or not evo_tok or not inst:
+        return jsonify({"ok": False, "error": "Configure a Evolution API primeiro (URL, Token e Instância)"})
+
+    headers = {"apikey": evo_tok, "Content-Type": "application/json"}
+
+    # 1. Busca todos os grupos da instância
+    try:
+        r = requests.get(f"{evo_url}/group/fetchAllGroups/{inst}?getParticipants=false",
+                         headers=headers, timeout=20)
+        groups_raw = r.json()
+        if isinstance(groups_raw, dict) and "groups" in groups_raw:
+            groups_raw = groups_raw["groups"]
+        if not isinstance(groups_raw, list):
+            return jsonify({"ok": False, "error": f"Resposta inesperada: {str(groups_raw)[:200]}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Erro ao buscar grupos: {e}"})
+
+    uid      = session["user_id"]
+    conn     = db()
+    saved    = 0
+    updated  = 0
+
+    for g in groups_raw:
+        jid   = g.get("id", "")
+        name  = g.get("subject", "") or g.get("name", "") or "Grupo sem nome"
+        if not jid:
+            continue
+
+        # 2. Tenta pegar o invite link (pode falhar se não for admin do grupo)
+        invite_link = ""
+        try:
+            ri = requests.get(f"{evo_url}/group/inviteCode/{inst}?groupJid={jid}",
+                              headers=headers, timeout=8)
+            rd = ri.json()
+            code = rd.get("inviteCode") or rd.get("code") or ""
+            if code:
+                invite_link = f"https://chat.whatsapp.com/{code}"
+        except Exception:
+            pass
+
+        # 3. Salva/atualiza no banco
+        try:
+            existing = conn.execute(
+                "SELECT id FROM wa_imported_groups WHERE user_id=? AND group_jid=?", (uid, jid)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE wa_imported_groups SET name=?, invite_link=?, imported_at=datetime('now') WHERE user_id=? AND group_jid=?",
+                    (name, invite_link, uid, jid)
+                )
+                updated += 1
+            else:
+                conn.execute(
+                    "INSERT INTO wa_imported_groups (user_id, group_jid, name, invite_link) VALUES (?,?,?,?)",
+                    (uid, jid, name, invite_link)
+                )
+                saved += 1
+        except Exception:
+            pass
+
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "novos": saved, "atualizados": updated, "total": saved + updated})
+
+
+@app.route("/api/grupos/meus-wa", methods=["GET"])
+@require_login
+def api_meus_grupos_wa():
+    """Retorna grupos WA importados pelo usuário logado."""
+    uid  = session["user_id"]
+    conn = db()
+    rows = conn.execute(
+        "SELECT id, group_jid, name, invite_link, imported_at FROM wa_imported_groups WHERE user_id=? ORDER BY name",
+        (uid,)
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/admin/grupos-wa", methods=["GET"])
+@require_admin
+def api_admin_grupos_wa():
+    """Admin: retorna todos os grupos importados de todos os usuários."""
+    conn = db()
+    rows = conn.execute("""
+        SELECT g.id, g.group_jid, g.name, g.invite_link, g.imported_at,
+               u.email as user_email, u.name as user_name
+        FROM wa_imported_groups g
+        JOIN users u ON u.id = g.user_id
+        ORDER BY u.email, g.name
+    """).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/admin/grupos-wa/<int:gid>", methods=["DELETE", "POST"])
+@require_admin
+def api_admin_delete_grupo_wa(gid):
+    conn = db()
+    conn.execute("DELETE FROM wa_imported_groups WHERE id=?", (gid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
 
 # ── Keep-alive (evita cold start no Render free) ────────────────────────────────
 @app.route("/ping")

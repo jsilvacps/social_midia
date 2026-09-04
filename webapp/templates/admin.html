@@ -232,11 +232,41 @@
       </tbody>
     </table>
   </div>
+
+  <!-- Grupos WA coletados -->
+  <div style="margin-top:32px">
+    <div class="section-title" style="justify-content:space-between">
+      <span>💬 Grupos WhatsApp coletados</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="grupos-filter" placeholder="🔍 filtrar…"
+               oninput="filtrarGrupos(this.value)"
+               style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 10px;font-size:13px;width:180px;outline:none">
+        <button class="btn btn-success btn-sm" onclick="baixarTxt()">⬇️ Baixar .txt</button>
+        <button class="btn btn-ghost btn-sm" onclick="copiarTodos()">📋 Copiar links</button>
+      </div>
+    </div>
+    <div id="grupos-wa-count" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+    <div class="table-wrap">
+      <table id="grupos-wa-table">
+        <thead>
+          <tr>
+            <th>Grupo</th>
+            <th>Link convite</th>
+            <th>Usuário</th>
+            <th>Coletado em</th>
+          </tr>
+        </thead>
+        <tbody id="grupos-wa-tbody"></tbody>
+      </table>
+    </div>
+  </div>
 </main>
 
 <div id="toast"></div>
 
 <script>
+let todosGrupos = [];
+
 function toast(msg, ms=3000) {
   const el = document.getElementById("toast");
   el.textContent = msg;
@@ -251,6 +281,55 @@ async function deleteUser(id, email) {
   else toast("❌ " + (r.error || "Erro"));
 }
 
+function renderGrupos(lista) {
+  const tb = document.getElementById("grupos-wa-tbody");
+  if(!lista.length) {
+    tb.innerHTML = `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:24px">
+      Nenhum grupo coletado ainda.<br>
+      <small>Os grupos aparecem automaticamente quando os usuários carregam seus contatos no app.</small>
+    </td></tr>`;
+    return;
+  }
+  tb.innerHTML = lista.map(g => `
+    <tr>
+      <td style="font-weight:600">💬 ${g.name}</td>
+      <td>
+        ${g.invite_link
+          ? `<a href="${g.invite_link}" target="_blank" style="color:var(--accent);font-size:12px;word-break:break-all">${g.invite_link}</a>`
+          : `<span style="color:var(--muted);font-size:12px">—</span>`}
+      </td>
+      <td style="font-size:12px;color:var(--muted)">${g.user_name || g.user_email}</td>
+      <td style="font-size:12px;color:var(--muted)">${(g.imported_at||"").slice(0,16).replace("T"," ")}</td>
+    </tr>`).join("");
+}
+
+function filtrarGrupos(q) {
+  const f = q.toLowerCase();
+  const filtrado = f ? todosGrupos.filter(g =>
+    g.name.toLowerCase().includes(f) ||
+    (g.user_email||"").toLowerCase().includes(f) ||
+    (g.invite_link||"").toLowerCase().includes(f)
+  ) : todosGrupos;
+  document.getElementById("grupos-wa-count").textContent = `${filtrado.length} de ${todosGrupos.length} grupos`;
+  renderGrupos(filtrado);
+}
+
+function baixarTxt() {
+  const linhas = todosGrupos.map(g =>
+    `${g.name}\t${g.invite_link || "sem link"}\t${g.user_email}`
+  );
+  const blob = new Blob(["Grupo\tLink\tUsuário\n" + linhas.join("\n")], {type:"text/plain;charset=utf-8"});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = "grupos_whatsapp.txt"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copiarTodos() {
+  const links = todosGrupos.filter(g=>g.invite_link).map(g=>g.invite_link).join("\n");
+  navigator.clipboard.writeText(links).then(()=>toast(`✅ ${todosGrupos.filter(g=>g.invite_link).length} links copiados!`));
+}
+
 // Load stats
 (async () => {
   try {
@@ -259,6 +338,15 @@ async function deleteUser(id, email) {
     document.getElementById("st-active").textContent = s.active_users;
     document.getElementById("st-posts").textContent  = s.total_posts;
     document.getElementById("st-sent").textContent   = s.sent_posts;
+  } catch(e) {}
+})();
+
+// Load grupos WA
+(async () => {
+  try {
+    todosGrupos = await fetch("/api/admin/grupos-wa").then(r=>r.json());
+    document.getElementById("grupos-wa-count").textContent = `${todosGrupos.length} grupos coletados`;
+    renderGrupos(todosGrupos);
   } catch(e) {}
 })();
 </script>

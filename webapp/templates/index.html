@@ -465,7 +465,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     <!-- Schedule -->
     <div class="card">
       <p class="card-title">🕐 Horário de Envio</p>
-      <div class="row-2">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end">
         <div class="field">
           <label>📅 Data</label>
           <input type="text" id="schedule-date" placeholder="dd/mm/aaaa" maxlength="10"
@@ -473,14 +473,12 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
         <div class="field">
           <label>🕐 Hora</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="text" id="schedule-time" placeholder="hh:mm" maxlength="5"
-                   oninput="maskTime(this)" autocomplete="off" inputmode="numeric" style="flex:1">
-            <button class="btn btn-secondary" onclick="setNow()" style="padding:11px 14px;white-space:nowrap" title="Definir para agora">
-              ⚡ Agora
-            </button>
-          </div>
+          <input type="text" id="schedule-time" placeholder="hh:mm" maxlength="5"
+                 oninput="maskTime(this)" autocomplete="off" inputmode="numeric">
         </div>
+        <button class="btn btn-secondary" onclick="setNow()" style="padding:12px 16px;white-space:nowrap;margin-bottom:0" title="Preencher com hora atual">
+          ⚡ Agora
+        </button>
       </div>
       <!-- campo oculto mantido para compatibilidade com o restante do JS -->
       <input type="hidden" id="schedule-dt">
@@ -793,7 +791,6 @@ function _fillDateTimeFields(d) {
 
 function setDefaultDateTime() {
   const d = new Date();
-  d.setMinutes(d.getMinutes() + 5);
   d.setSeconds(0);
   _fillDateTimeFields(d);
 }
@@ -1106,7 +1103,15 @@ async function agendarPost() {
   clearFile();
   document.getElementById("caption").value = "";
   document.getElementById("batch-title").value = "";
-  setDefaultDateTime();
+  // Mantém a data atual e avança 1 hora no horário para facilitar próximo agendamento
+  const cur = document.getElementById("schedule-dt").value;
+  if(cur) {
+    const next = new Date(cur);
+    next.setHours(next.getHours() + 1);
+    _fillDateTimeFields(next);
+  } else {
+    setDefaultDateTime();
+  }
 
   // Vai para a aba de posts
   const btn2 = document.querySelectorAll("nav button")[1];

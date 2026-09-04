@@ -467,15 +467,23 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <p class="card-title">🕐 Horário de Envio</p>
       <div class="row-2">
         <div class="field">
-          <label>Data e hora</label>
-          <input type="datetime-local" id="schedule-dt">
+          <label>📅 Data</label>
+          <input type="text" id="schedule-date" placeholder="dd/mm/aaaa" maxlength="10"
+                 oninput="maskDate(this)" autocomplete="off" inputmode="numeric">
         </div>
-        <div style="display:flex;flex-direction:column;justify-content:flex-end">
-          <button class="btn btn-secondary" onclick="setNow()" style="padding:12px" title="Definir para agora">
-            🕐 Agora
-          </button>
+        <div class="field">
+          <label>🕐 Hora</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="schedule-time" placeholder="hh:mm" maxlength="5"
+                   oninput="maskTime(this)" autocomplete="off" inputmode="numeric" style="flex:1">
+            <button class="btn btn-secondary" onclick="setNow()" style="padding:11px 14px;white-space:nowrap" title="Definir para agora">
+              ⚡ Agora
+            </button>
+          </div>
         </div>
       </div>
+      <!-- campo oculto mantido para compatibilidade com o restante do JS -->
+      <input type="hidden" id="schedule-dt">
       <div class="row-2" style="margin-top:10px">
         <div class="field">
           <label>🔁 Repetir por</label>
@@ -723,7 +731,8 @@ let postStream   = null;
 // ══ Init ═════════════════════════════════════════════════
 async function init() {
   setDefaultDateTime();
-  document.getElementById("schedule-dt").addEventListener("change", updateScheduleSummary);
+  document.getElementById("schedule-date").addEventListener("input", syncHiddenDT);
+  document.getElementById("schedule-time").addEventListener("input", syncHiddenDT);
   document.getElementById("repeat-days").addEventListener("change", updateScheduleSummary);
   document.getElementById("times-per-day").addEventListener("change", updateScheduleSummary);
   const cfg = await fetch("/api/config").then(r=>r.json());
@@ -739,22 +748,60 @@ async function init() {
     navigator.serviceWorker.register("/static/sw.js?v=5").catch(()=>{});
 }
 
-function setDefaultDateTime() {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() + 5);
-  d.setSeconds(0);
-  document.getElementById("schedule-dt").value = localISOString(d);
-}
-
 function localISOString(d) {
-  // Retorna datetime-local no fuso do navegador (ex: 2026-09-01T21:00)
   const pad = n => String(n).padStart(2,'0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Mascara dd/mm/aaaa ao digitar
+function maskDate(el) {
+  let v = el.value.replace(/\D/g,'');
+  if(v.length > 2)  v = v.slice(0,2)+'/'+v.slice(2);
+  if(v.length > 5)  v = v.slice(0,5)+'/'+v.slice(5,9);
+  el.value = v;
+  syncHiddenDT();
+}
+
+// Mascara hh:mm ao digitar
+function maskTime(el) {
+  let v = el.value.replace(/\D/g,'');
+  if(v.length > 2) v = v.slice(0,2)+':'+v.slice(2,4);
+  el.value = v;
+  syncHiddenDT();
+}
+
+// Sincroniza campos visuais → campo hidden (formato ISO para o backend)
+function syncHiddenDT() {
+  const dateStr = document.getElementById("schedule-date").value; // dd/mm/aaaa
+  const timeStr = document.getElementById("schedule-time").value; // hh:mm
+  const [dd,mm,yyyy] = dateStr.split("/");
+  const hidden = document.getElementById("schedule-dt");
+  if(dd && mm && yyyy && yyyy.length===4 && timeStr.length===5) {
+    hidden.value = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}T${timeStr}`;
+  } else {
+    hidden.value = "";
+  }
+  updateScheduleSummary();
+}
+
+function _fillDateTimeFields(d) {
+  const pad = n => String(n).padStart(2,'0');
+  document.getElementById("schedule-date").value = `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+  document.getElementById("schedule-time").value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  document.getElementById("schedule-dt").value   = localISOString(d);
+}
+
+function setDefaultDateTime() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() + 5);
+  d.setSeconds(0);
+  _fillDateTimeFields(d);
+}
+
 function setNow() {
   const d = new Date();
-  document.getElementById("schedule-dt").value = localISOString(d);
+  d.setSeconds(0);
+  _fillDateTimeFields(d);
   updateScheduleSummary();
 }
 

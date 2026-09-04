@@ -827,20 +827,24 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
         # Se já veio no fetchAllGroups, usa direto
         if g.get("invite_link"):
             return g["invite_link"]
-        # Tenta buscar via endpoint — funciona para qualquer membro do grupo
+        # Tenta buscar via endpoint
         jid = g["id"]
         try:
             r = requests.get(f"{base}/group/inviteCode/{inst}?groupJid={jid}",
                              headers=headers, timeout=8)
             d = r.json()
-            # Aceita vários formatos que o Evolution pode retornar
+            # Loga resposta do primeiro grupo para debug
+            if g == groups[0]:
+                print(f"[invite_debug] jid={jid} status={r.status_code} resp={str(d)[:300]}")
+            # Aceita vários formatos
             code = (d.get("inviteCode") or d.get("code") or
                     d.get("invite") or d.get("link") or "")
-            # Se vier o link completo, usa direto
             if code and code.startswith("https://"):
                 return code
             return f"https://chat.whatsapp.com/{code}" if code else ""
-        except Exception:
+        except Exception as e:
+            if g == groups[0]:
+                print(f"[invite_debug] erro: {e}")
             return ""
 
     conn = db()

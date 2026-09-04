@@ -232,6 +232,7 @@
                 </button>
               </form>
               {% endif %}
+              <button class="btn btn-ghost btn-sm" onclick="openConfig({{ u.id }}, '{{ u.name or u.email }}')">⚙️ Config</button>
               {% if u.id != current_user.id %}
               <button class="btn btn-danger btn-sm" onclick="deleteUser({{ u.id }}, '{{ u.email }}')">🗑️</button>
               {% endif %}
@@ -272,6 +273,42 @@
   </div>
 </main>
 
+<!-- Modal config de usuário -->
+<div id="cfg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h2 style="font-size:16px;font-weight:700">⚙️ Config: <span id="cfg-username"></span></h2>
+      <button onclick="closeConfig()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">Evolution API URL</label>
+        <input id="cfg-evo-url" type="text" placeholder="https://..." style="width:100%;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">API Token</label>
+        <input id="cfg-evo-token" type="text" placeholder="Token" style="width:100%;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">Nome da Instância</label>
+        <input id="cfg-evo-instance" type="text" placeholder="Ex: meucelular" style="width:100%;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">Chave ScaleSerp (Busca de Grupos)</label>
+        <input id="cfg-scaleserp" type="text" placeholder="API Key" style="width:100%;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em">URL pública do app</label>
+        <input id="cfg-app-url" type="text" placeholder="https://social-midia.onrender.com" style="width:100%;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button onclick="saveConfig()" class="btn btn-primary" style="flex:1">💾 Salvar</button>
+        <button onclick="closeConfig()" class="btn btn-ghost" style="flex:1">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -283,6 +320,53 @@ function toast(msg, ms=3000) {
   el.style.display = "block";
   setTimeout(() => el.style.display = "none", ms);
 }
+
+let _cfgUid = null;
+
+async function openConfig(uid, name) {
+  _cfgUid = uid;
+  document.getElementById("cfg-username").textContent = name;
+  // Limpa campos
+  ["cfg-evo-url","cfg-evo-token","cfg-evo-instance","cfg-scaleserp","cfg-app-url"]
+    .forEach(id => document.getElementById(id).value = "");
+  // Carrega config existente
+  try {
+    const c = await fetch(`/api/admin/users/${uid}/config`).then(r=>r.json());
+    if(c.evo_url)      document.getElementById("cfg-evo-url").value      = c.evo_url;
+    if(c.evo_token)    document.getElementById("cfg-evo-token").value    = c.evo_token;
+    if(c.evo_instance) document.getElementById("cfg-evo-instance").value = c.evo_instance;
+    if(c.google_api_key) document.getElementById("cfg-scaleserp").value  = c.google_api_key;
+    if(c.app_url)      document.getElementById("cfg-app-url").value      = c.app_url;
+  } catch(e) {}
+  const modal = document.getElementById("cfg-modal");
+  modal.style.display = "flex";
+}
+
+function closeConfig() {
+  document.getElementById("cfg-modal").style.display = "none";
+  _cfgUid = null;
+}
+
+async function saveConfig() {
+  if(!_cfgUid) return;
+  const data = {
+    evo_url:       document.getElementById("cfg-evo-url").value.trim(),
+    evo_token:     document.getElementById("cfg-evo-token").value.trim(),
+    evo_instance:  document.getElementById("cfg-evo-instance").value.trim(),
+    google_api_key: document.getElementById("cfg-scaleserp").value.trim(),
+    app_url:       document.getElementById("cfg-app-url").value.trim(),
+  };
+  const r = await fetch(`/api/admin/users/${_cfgUid}/config`, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)
+  }).then(r=>r.json());
+  if(r.ok) { toast("✅ Config salva!"); closeConfig(); }
+  else toast("❌ " + r.error);
+}
+
+// Fecha modal clicando fora
+document.getElementById("cfg-modal").addEventListener("click", function(e) {
+  if(e.target === this) closeConfig();
+});
 
 async function toggleFeature(uid, feat, btn) {
   const r = await fetch(`/admin/users/${uid}/feature/${feat}`, {method:"POST"}).then(r=>r.json());

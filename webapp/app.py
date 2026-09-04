@@ -1115,6 +1115,15 @@ def api_config():
         return jsonify({"ok": True})
     return jsonify(load_config())
 
+@app.route("/api/admin/users/<int:uid>/config", methods=["GET", "POST"])
+@require_admin
+def api_admin_user_config(uid):
+    """Admin lê ou salva config de qualquer usuário."""
+    if request.method == "POST":
+        save_config(request.get_json() or {}, user_id=uid)
+        return jsonify({"ok": True})
+    return jsonify(load_config(user_id=uid))
+
 @app.route("/api/config/evo-test", methods=["POST"])
 @require_login
 def api_evo_test():

@@ -885,12 +885,16 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
     inst    = cfg.get("evo_instance", "")
     headers = _evo_headers(cfg)
 
+    # JIDs que retornaram not-authorized (admin bloqueou link) — não tentar de novo
+    _no_auth = set()
+
     def _get_invite(g):
         # Se já veio no fetchAllGroups, usa direto
         if g.get("invite_link"):
             return g["invite_link"]
-        # Tenta buscar via endpoint
         jid = g["id"]
+        if jid in _no_auth:
+            return ""
         try:
             r = requests.get(f"{base}/group/inviteCode/{inst}?groupJid={jid}",
                              headers=headers, timeout=8)
@@ -904,18 +908,21 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
                 return code
             if code:
                 return f"https://chat.whatsapp.com/{code}"
-            # Loga resposta completa para grupos sem link (primeiros 3 falhos)
-            print(f"[invite_sem_link] jid={jid} status={r.status_code} resp={str(d)[:200]}")
+            # Verifica se é not-authorized (admin desativou link)
+            msgs = str(d)
+            if "not-authorized" in msgs:
+                _no_auth.add(jid)
             return ""
-        except Exception as e:
-            print(f"[invite_erro] jid={jid} erro={e}")
+        except Exception:
             return ""
 
     conn = db()
     try:
-        # Busca invite links em paralelo (máx 10 threads)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-            links = list(ex.map(_get_invite, groups))
+        # Busca links SEQUENCIALMENTE com delay para não bater rate limit do WhatsApp
+        links = []
+        for g in groups:
+            links.append(_get_invite(g))
+            time.sleep(0.4)   # 400ms entre cada request → ~12s para 29 grupos
 
         for g, link in zip(groups, links):
             jid  = g["id"]

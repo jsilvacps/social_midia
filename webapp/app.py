@@ -257,9 +257,11 @@ def wa_get_groups(cfg) -> tuple[list, str]:
         for g in raw:
             jid  = g.get("id", "")
             name = g.get("subject") or g.get("name") or jid
-            # Alguns builds do Evolution já retornam inviteCode no fetchAllGroups
-            code = g.get("inviteCode") or g.get("invite") or ""
-            link = f"https://chat.whatsapp.com/{code}" if code else ""
+            # Alguns builds do Evolution já retornam o link no fetchAllGroups
+            link = (g.get("inviteUrl") or g.get("invite_url") or "")
+            if not link:
+                code = g.get("inviteCode") or g.get("invite") or ""
+                link = f"https://chat.whatsapp.com/{code}" if code else ""
             groups.append({"id": jid, "name": name, "invite_link": link})
         return sorted(groups, key=lambda g: g["name"].lower()), ""
     except Exception as exc:
@@ -833,10 +835,11 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
             r = requests.get(f"{base}/group/inviteCode/{inst}?groupJid={jid}",
                              headers=headers, timeout=8)
             d = r.json()
-            # Loga resposta do primeiro grupo para debug
-            if g == groups[0]:
-                print(f"[invite_debug] jid={jid} status={r.status_code} resp={str(d)[:300]}")
-            # Aceita vários formatos
+            # inviteUrl já vem completo (formato confirmado nos logs)
+            url = (d.get("inviteUrl") or d.get("invite_url") or "")
+            if url:
+                return url
+            # fallback: monta a partir do code
             code = (d.get("inviteCode") or d.get("code") or
                     d.get("invite") or d.get("link") or "")
             if code and code.startswith("https://"):

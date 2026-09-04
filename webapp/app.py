@@ -835,19 +835,20 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
             r = requests.get(f"{base}/group/inviteCode/{inst}?groupJid={jid}",
                              headers=headers, timeout=8)
             d = r.json()
-            # inviteUrl já vem completo (formato confirmado nos logs)
             url = (d.get("inviteUrl") or d.get("invite_url") or "")
             if url:
                 return url
-            # fallback: monta a partir do code
             code = (d.get("inviteCode") or d.get("code") or
                     d.get("invite") or d.get("link") or "")
             if code and code.startswith("https://"):
                 return code
-            return f"https://chat.whatsapp.com/{code}" if code else ""
+            if code:
+                return f"https://chat.whatsapp.com/{code}"
+            # Loga resposta completa para grupos sem link (primeiros 3 falhos)
+            print(f"[invite_sem_link] jid={jid} status={r.status_code} resp={str(d)[:200]}")
+            return ""
         except Exception as e:
-            if g == groups[0]:
-                print(f"[invite_debug] erro: {e}")
+            print(f"[invite_erro] jid={jid} erro={e}")
             return ""
 
     conn = db()

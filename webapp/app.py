@@ -252,8 +252,15 @@ def wa_get_groups(cfg) -> tuple[list, str]:
         if r.status_code != 200:
             return [], f"HTTP {r.status_code}"
         data = r.json()
-        groups = [{"id": g.get("id", ""), "name": g.get("subject", g.get("id", ""))}
-                  for g in (data if isinstance(data, list) else [])]
+        raw  = data if isinstance(data, list) else []
+        groups = []
+        for g in raw:
+            jid  = g.get("id", "")
+            name = g.get("subject") or g.get("name") or jid
+            # Alguns builds do Evolution já retornam inviteCode no fetchAllGroups
+            code = g.get("inviteCode") or g.get("invite") or ""
+            link = f"https://chat.whatsapp.com/{code}" if code else ""
+            groups.append({"id": jid, "name": name, "invite_link": link})
         return sorted(groups, key=lambda g: g["name"].lower()), ""
     except Exception as exc:
         return [], str(exc)
@@ -808,38 +815,52 @@ def api_library_debug(filename):
 
 # ── WhatsApp groups ─────────────────────────────────────────────────────────────
 def _salvar_grupos_silencioso(cfg, uid, groups):
-    """Salva grupos no banco em background sem travar a resposta."""
+    """Salva grupos no banco em background sem travar a resposta.
+    Prioriza o invite_link já vindo do fetchAllGroups.
+    Para grupos sem link, tenta /group/inviteCode (funciona p/ qualquer membro).
+    """
     base    = cfg.get("evo_url", "").rstrip("/")
     inst    = cfg.get("evo_instance", "")
     headers = _evo_headers(cfg)
 
-    def _get_invite(jid):
+    def _get_invite(g):
+        # Se já veio no fetchAllGroups, usa direto
+        if g.get("invite_link"):
+            return g["invite_link"]
+        # Tenta buscar via endpoint — funciona para qualquer membro do grupo
+        jid = g["id"]
         try:
             r = requests.get(f"{base}/group/inviteCode/{inst}?groupJid={jid}",
-                             headers=headers, timeout=6)
+                             headers=headers, timeout=8)
             d = r.json()
-            code = d.get("inviteCode") or d.get("code") or ""
+            # Aceita vários formatos que o Evolution pode retornar
+            code = (d.get("inviteCode") or d.get("code") or
+                    d.get("invite") or d.get("link") or "")
+            # Se vier o link completo, usa direto
+            if code and code.startswith("https://"):
+                return code
             return f"https://chat.whatsapp.com/{code}" if code else ""
         except Exception:
             return ""
 
     conn = db()
     try:
-        # Busca invite links em paralelo (máx 8 threads)
-        jids = [g["id"] for g in groups]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-            links = list(ex.map(_get_invite, jids))
+        # Busca invite links em paralelo (máx 10 threads)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            links = list(ex.map(_get_invite, groups))
 
         for g, link in zip(groups, links):
             jid  = g["id"]
             name = g["name"]
             existing = conn.execute(
-                "SELECT id FROM wa_imported_groups WHERE user_id=? AND group_jid=?", (uid, jid)
+                "SELECT id, invite_link FROM wa_imported_groups WHERE user_id=? AND group_jid=?", (uid, jid)
             ).fetchone()
             if existing:
+                # Só atualiza o link se agora temos um e antes não tinha
+                new_link = link or (existing["invite_link"] or "")
                 conn.execute(
                     "UPDATE wa_imported_groups SET name=?, invite_link=?, imported_at=datetime('now') WHERE user_id=? AND group_jid=?",
-                    (name, link, uid, jid)
+                    (name, new_link, uid, jid)
                 )
             else:
                 conn.execute(
@@ -847,6 +868,7 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
                     (uid, jid, name, link)
                 )
         conn.commit()
+        print(f"[grupos_silencioso] uid={uid} grupos={len(groups)} com_link={sum(1 for l in links if l)}")
     except Exception as e:
         print(f"[grupos_silencioso] erro: {e}")
     finally:

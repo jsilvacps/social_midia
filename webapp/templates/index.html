@@ -628,6 +628,47 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       </div>
     </div>
 
+    <!-- Conectar WhatsApp -->
+    <div class="card" id="wa-connect-card">
+      <p class="card-title">📱 Conectar WhatsApp</p>
+      <div id="wa-conn-status" style="font-size:13px;color:var(--muted);margin-bottom:12px">Verificando…</div>
+
+      <!-- QR Code -->
+      <div id="wa-conn-qr-wrap" style="display:none;text-align:center;margin-bottom:12px">
+        <img id="wa-conn-qr" src="" alt="QR Code"
+             style="width:200px;height:200px;border-radius:10px;border:4px solid var(--border);background:#fff;object-fit:contain">
+        <p style="font-size:11px;color:var(--muted);margin-top:8px">
+          WhatsApp → Aparelhos conectados → Conectar aparelho → aponte a câmera para o QR
+        </p>
+      </div>
+
+      <!-- Pairing code resultado -->
+      <div id="wa-conn-pair-result" style="display:none;text-align:center;margin-bottom:12px">
+        <div id="wa-conn-pair-code" style="font-size:34px;font-weight:800;letter-spacing:8px;color:var(--green)"></div>
+        <p style="font-size:11px;color:var(--muted);margin-top:6px">
+          WhatsApp → Aparelhos conectados → Vincular com número de telefone → digite o código
+        </p>
+      </div>
+
+      <!-- Campo telefone pairing -->
+      <div id="wa-conn-pair-input" style="display:none;margin-bottom:12px">
+        <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <div style="background:#1e2d4a;padding:9px 10px;font-size:13px;color:#94a3b8;display:flex;align-items:center;border-right:1px solid var(--border)">🇧🇷 +55</div>
+          <input id="wa-conn-phone" type="tel" placeholder="(11) 99999-8888"
+                 style="flex:1;background:var(--surface);border:none;padding:9px 10px;color:var(--text);font-size:13px;outline:none">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="waConnRequestCode()" style="margin-top:8px;width:100%">
+          Gerar código de 8 dígitos
+        </button>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="wa-conn-btns">
+        <button id="wa-conn-btn-qr" class="btn btn-primary btn-sm" onclick="waConnLoadQr()" style="display:none">🔄 Atualizar QR</button>
+        <button id="wa-conn-btn-pair" class="btn btn-secondary btn-sm" onclick="waConnTogglePair()" style="display:none">🔢 Usar código</button>
+        <button id="wa-conn-btn-disc" class="btn btn-danger btn-sm" onclick="waConnDisconnect()" style="display:none">🔌 Desconectar</button>
+      </div>
+    </div>
+
     <!-- Instagram -->
     <div class="card">
       <p class="card-title">📸 Instagram – Meta Graph API</p>
@@ -1643,6 +1684,102 @@ async function testIg() {
   if(r.ok){ el.style.borderLeftColor="var(--success)"; el.textContent=`✅ Conta: @${r.username}`; }
   else    { el.style.borderLeftColor="var(--danger)";  el.textContent=`❌ ${r.error}`; }
 }
+
+// ══ WA Connect (cliente) ════════════════════════════════
+let waConnTimer = null;
+
+async function waConnCheck() {
+  const r = await fetch("/api/wa/status").then(r=>r.json()).catch(()=>({ok:false}));
+  const st = document.getElementById("wa-conn-status");
+  const btnQr   = document.getElementById("wa-conn-btn-qr");
+  const btnPair = document.getElementById("wa-conn-btn-pair");
+  const btnDisc = document.getElementById("wa-conn-btn-disc");
+  const qrWrap  = document.getElementById("wa-conn-qr-wrap");
+
+  if (!r.ok) {
+    st.innerHTML = "🔴 <strong>Não configurado</strong> — salve a URL, Token e Instância acima primeiro";
+    st.style.color = "var(--danger)";
+    [btnQr, btnPair, btnDisc, qrWrap].forEach(el => { if(el) el.style.display = "none"; });
+    clearInterval(waConnTimer); waConnTimer = null;
+    return;
+  }
+  const state = (r.state || "").toLowerCase();
+  if (state === "open" || state === "connected") {
+    st.innerHTML = "🟢 <strong>Conectado!</strong> Seu WhatsApp está vinculado e pronto para uso.";
+    st.style.color = "var(--green)";
+    if (btnQr)   btnQr.style.display   = "none";
+    if (btnPair) btnPair.style.display = "none";
+    if (btnDisc) btnDisc.style.display = "inline-flex";
+    if (qrWrap)  qrWrap.style.display  = "none";
+    document.getElementById("wa-conn-pair-result").style.display = "none";
+    document.getElementById("wa-conn-pair-input").style.display  = "none";
+    clearInterval(waConnTimer); waConnTimer = null;
+  } else {
+    st.innerHTML = "🟡 <strong>Aguardando conexão</strong> — escaneie o QR Code ou use o código de 8 dígitos";
+    st.style.color = "#f59e0b";
+    if (btnQr)   btnQr.style.display   = "inline-flex";
+    if (btnPair) btnPair.style.display = "inline-flex";
+    if (btnDisc) btnDisc.style.display = "inline-flex";
+    waConnLoadQr();
+    if (!waConnTimer) waConnTimer = setInterval(waConnCheck, 5000);
+  }
+}
+
+async function waConnLoadQr() {
+  const r = await fetch("/api/wa/qr").then(r=>r.json()).catch(()=>({ok:false}));
+  const qrWrap = document.getElementById("wa-conn-qr-wrap");
+  const qrImg  = document.getElementById("wa-conn-qr");
+  if (r.ok && r.qr_base64) {
+    qrImg.src = "data:image/png;base64," + r.qr_base64;
+    qrWrap.style.display = "block";
+  }
+}
+
+function waConnTogglePair() {
+  const box = document.getElementById("wa-conn-pair-input");
+  box.style.display = box.style.display === "none" ? "block" : "none";
+  if (box.style.display === "block") document.getElementById("wa-conn-phone").focus();
+}
+
+async function waConnRequestCode() {
+  const phone = (document.getElementById("wa-conn-phone").value || "").replace(/\D/g,"");
+  if (!phone || phone.length < 10) { toast("❌ Informe o número com DDD"); return; }
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = "Gerando…";
+  const r = await fetch("/api/wa/pairing-code", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({phone: "55" + phone})
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  btn.disabled = false; btn.textContent = "Gerar código de 8 dígitos";
+  if (r.ok && r.code) {
+    document.getElementById("wa-conn-pair-code").textContent = r.code;
+    document.getElementById("wa-conn-pair-result").style.display = "block";
+    document.getElementById("wa-conn-pair-input").style.display  = "none";
+    toast("✅ Digite o código no WhatsApp!");
+  } else {
+    toast("❌ " + (r.error || "Erro ao gerar código"));
+  }
+}
+
+async function waConnDisconnect() {
+  if (!confirm("Desconectar WhatsApp?")) return;
+  await fetch("/api/wa/disconnect", {method:"POST"}).then(r=>r.json()).catch(()=>{});
+  toast("✅ Desconectado");
+  waConnCheck();
+}
+
+// Inicia verificação ao entrar na aba Config
+document.addEventListener("DOMContentLoaded", () => {
+  const tabConfig = document.getElementById("tab-config");
+  if (tabConfig) {
+    const obs = new MutationObserver(() => {
+      if (tabConfig.classList.contains("active")) { waConnCheck(); }
+      else { clearInterval(waConnTimer); waConnTimer = null; }
+    });
+    obs.observe(tabConfig, {attributes:true, attributeFilter:["class"]});
+  }
+});
 
 // ══ Utils ════════════════════════════════════════════════
 function esc(s){

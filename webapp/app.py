@@ -1829,6 +1829,85 @@ def api_evo_test():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
+# ── WA Connect (rotas do cliente) ────────────────────────────────────────────
+def _get_user_evo_cfg():
+    """Retorna (base, token, instance) da config do usuário logado."""
+    cfg      = load_config()
+    base     = (cfg.get("evo_url") or "").rstrip("/")
+    token    = cfg.get("evo_token") or ""
+    instance = cfg.get("evo_instance") or ""
+    return base, token, instance
+
+@app.route("/api/wa/status")
+@require_login
+def api_wa_status_user():
+    base, token, instance = _get_user_evo_cfg()
+    if not all([base, token, instance]):
+        return jsonify({"ok": False, "error": "Não configurado"})
+    try:
+        r = requests.get(f"{base}/instance/connectionState/{instance}",
+                         headers={"apikey": token}, timeout=10)
+        if r.status_code == 200:
+            state = r.json().get("instance", {}).get("state", "unknown")
+            return jsonify({"ok": True, "state": state})
+        return jsonify({"ok": False, "error": f"HTTP {r.status_code}"})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+@app.route("/api/wa/qr")
+@require_login
+def api_wa_qr_user():
+    base, token, instance = _get_user_evo_cfg()
+    if not all([base, token, instance]):
+        return jsonify({"ok": False, "error": "Não configurado"})
+    try:
+        r = requests.get(f"{base}/instance/connect/{instance}",
+                         headers={"apikey": token}, timeout=15)
+        if r.status_code == 200:
+            d = r.json()
+            qr = d.get("base64") or d.get("qrcode", {}).get("base64", "")
+            if qr and qr.startswith("data:image"):
+                qr = qr.split(",", 1)[1]
+            return jsonify({"ok": True, "qr_base64": qr})
+        return jsonify({"ok": False, "error": f"HTTP {r.status_code}"})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+@app.route("/api/wa/pairing-code", methods=["POST"])
+@require_login
+def api_wa_pairing_user():
+    base, token, instance = _get_user_evo_cfg()
+    if not all([base, token, instance]):
+        return jsonify({"ok": False, "error": "Não configurado"})
+    data  = request.get_json(force=True) or {}
+    phone = (data.get("phone") or "").strip().replace(" ","").replace("-","").replace("(","").replace(")","")
+    if not phone:
+        return jsonify({"ok": False, "error": "Informe o número"})
+    try:
+        r = requests.post(f"{base}/instance/pairingCode/{instance}",
+                          headers={"apikey": token, "Content-Type": "application/json"},
+                          json={"number": phone}, timeout=15)
+        d = r.json() if r.content else {}
+        code = d.get("code") or d.get("pairingCode") or d.get("pairing_code") or ""
+        if code:
+            return jsonify({"ok": True, "code": code})
+        return jsonify({"ok": False, "error": d.get("message") or f"HTTP {r.status_code}"})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+@app.route("/api/wa/disconnect", methods=["POST"])
+@require_login
+def api_wa_disconnect_user():
+    base, token, instance = _get_user_evo_cfg()
+    if not all([base, token, instance]):
+        return jsonify({"ok": False, "error": "Não configurado"})
+    try:
+        requests.delete(f"{base}/instance/delete/{instance}",
+                        headers={"apikey": token}, timeout=15)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
 @app.route("/api/grupos/debug", methods=["POST"])
 @require_login
 @require_feature("grupos")

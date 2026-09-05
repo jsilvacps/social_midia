@@ -302,8 +302,8 @@
           <tr>
             <th>Grupo</th>
             <th>Link convite</th>
-            <th>Usuário</th>
             <th>Coletado em</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="grupos-wa-tbody"></tbody>
@@ -464,17 +464,50 @@ function renderGrupos(lista) {
     </td></tr>`;
     return;
   }
-  tb.innerHTML = lista.map(g => `
-    <tr>
-      <td style="font-weight:600">💬 ${g.name}</td>
-      <td>
-        ${g.invite_link
-          ? `<a href="${g.invite_link}" target="_blank" style="color:var(--accent);font-size:12px;word-break:break-all">${g.invite_link}</a>`
-          : `<span style="color:var(--muted);font-size:12px">—</span>`}
-      </td>
-      <td style="font-size:12px;color:var(--muted)">${g.user_name || g.user_email}</td>
-      <td style="font-size:12px;color:var(--muted)">${(g.imported_at||"").slice(0,16).replace("T"," ")}</td>
-    </tr>`).join("");
+
+  // Agrupa por cliente
+  const porCliente = {};
+  lista.forEach(g => {
+    const key = g.user_email;
+    if (!porCliente[key]) porCliente[key] = { name: g.user_name || g.user_email, email: g.user_email, grupos: [] };
+    porCliente[key].grupos.push(g);
+  });
+
+  let html = "";
+  Object.values(porCliente).forEach((cliente, idx) => {
+    const rowId = `cl-rows-${idx}`;
+    html += `
+      <tr onclick="toggleClienteRows('${rowId}')" style="cursor:pointer;background:rgba(59,130,246,.08);user-select:none">
+        <td colspan="4" style="padding:10px 14px;font-weight:700;font-size:13px">
+          <span id="${rowId}-ico">▼</span>
+          👤 ${cliente.name}
+          <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:6px">${cliente.email}</span>
+          <span style="font-size:11px;background:rgba(0,229,160,.15);color:#00e5a0;border-radius:10px;padding:2px 8px;margin-left:8px">${cliente.grupos.length} grupos</span>
+        </td>
+      </tr>`;
+    cliente.grupos.forEach(g => {
+      html += `
+      <tr class="${rowId}" style="font-size:13px">
+        <td style="font-weight:600;padding-left:28px">💬 ${g.name}</td>
+        <td>
+          ${g.invite_link
+            ? `<a href="${g.invite_link}" target="_blank" style="color:var(--accent);font-size:12px;word-break:break-all">${g.invite_link}</a>`
+            : `<span style="color:var(--muted);font-size:12px">—</span>`}
+        </td>
+        <td style="font-size:12px;color:var(--muted)">${(g.imported_at||"").slice(0,16).replace("T"," ")}</td>
+        <td></td>
+      </tr>`;
+    });
+  });
+  tb.innerHTML = html;
+}
+
+function toggleClienteRows(rowId) {
+  const rows = document.querySelectorAll(`.${rowId}`);
+  const ico  = document.getElementById(`${rowId}-ico`);
+  const hidden = rows[0]?.style.display === "none";
+  rows.forEach(r => r.style.display = hidden ? "" : "none");
+  if (ico) ico.textContent = hidden ? "▼" : "▶";
 }
 
 function filtrarGrupos(q) {

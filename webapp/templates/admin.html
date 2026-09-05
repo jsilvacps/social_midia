@@ -637,8 +637,7 @@ function openWaModal(uid, name) {
   var modal = document.getElementById("wa-modal");
   if (!modal) return;
   document.getElementById("wa-modal-title").textContent = `📱 WhatsApp — ${name}`;
-  document.getElementById("wa-qr-img").src = "";
-  document.getElementById("wa-qr-img").style.display = "none";
+  var qrImg = document.getElementById("wa-qr-img"); if(qrImg){qrImg.src="";qrImg.style.display="none";}
   document.getElementById("wa-status-badge").textContent = "…";
   document.getElementById("wa-status-badge").style.color = "var(--muted)";
   var pb = document.getElementById("wa-phone-badge"); if(pb) pb.style.display="none";
@@ -655,51 +654,41 @@ function closeWaModal() {
 
 async function loadWaStatus(uid) {
   const r = await fetch(`/api/admin/users/${uid}/wa-status`).then(r=>r.json()).catch(()=>({ok:false}));
-  const badge = document.getElementById("wa-status-badge");
-  const qrImg = document.getElementById("wa-qr-img");
+  const badge     = document.getElementById("wa-status-badge");
   const btnCreate = document.getElementById("wa-btn-create");
   const btnDisc   = document.getElementById("wa-btn-disc");
-  const btnQr     = document.getElementById("wa-btn-qr");
+  // elementos opcionais (podem não existir no DOM)
+  const fn = id => document.getElementById(id);
 
-  const btnPairing = document.getElementById("wa-btn-pairing");
   if (!r.ok) {
-    // Instância ainda não existe
     badge.textContent = "🔴 Sem instância";
     badge.style.color = "var(--danger)";
-    qrImg.style.display = "none";
-    btnCreate.style.display = "inline-flex";
-    btnDisc.style.display   = "none";
-    btnQr.style.display     = "none";
-    if (btnPairing) btnPairing.style.display = "none";
+    if(btnCreate) btnCreate.style.display = "inline-flex";
+    if(btnDisc)   btnDisc.style.display   = "none";
     clearInterval(waPollTimer);
   } else {
     const st = (r.state || "").toLowerCase();
     if (st === "open" || st === "connected") {
       badge.textContent = "🟢 Conectado";
       badge.style.color = "var(--green)";
-      var phoneBadge = document.getElementById("wa-phone-badge");
-      var phoneNum   = document.getElementById("wa-phone-num");
+      var phoneBadge = fn("wa-phone-badge");
+      var phoneNum   = fn("wa-phone-num");
       if (r.phone && phoneBadge && phoneNum) {
         var p = r.phone;
         if (p.startsWith("55") && p.length >= 12) p = "+55 (" + p.slice(2,4) + ") " + p.slice(4,9) + "-" + p.slice(9);
         phoneNum.textContent = p;
         phoneBadge.style.display = "block";
       } else if (phoneBadge) { phoneBadge.style.display = "none"; }
-      qrImg.style.display = "none";
-      btnCreate.style.display = "none";
-      btnDisc.style.display   = "inline-flex";
-      btnQr.style.display     = "none";
-      if (btnPairing) btnPairing.style.display = "none";
+      if(btnCreate) btnCreate.style.display = "none";
+      if(btnDisc)   btnDisc.style.display   = "inline-flex";
       clearInterval(waPollTimer);
     } else {
       badge.textContent = "🟡 Aguardando conexão do cliente";
       badge.style.color = "var(--warning)";
-      var hint = document.getElementById("wa-connect-hint");
+      var hint = fn("wa-connect-hint");
       if (hint) hint.style.display = "block";
-      btnCreate.style.display = "none";
-      btnDisc.style.display   = "inline-flex";
-      btnQr.style.display     = "none";
-      if (btnPairing) btnPairing.style.display = "none";
+      if(btnCreate) btnCreate.style.display = "none";
+      if(btnDisc)   btnDisc.style.display   = "inline-flex";
       // polling a cada 5s para detectar quando o cliente conectar
       if (!waPollTimer) {
         waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 5000);

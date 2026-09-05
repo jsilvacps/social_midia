@@ -409,6 +409,15 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <label>Título do lote <span style="opacity:.5;font-weight:400">(para identificar na lista de posts)</span></label>
         <input type="text" id="batch-title" placeholder="Ex: Promoção de setembro, Campanha verão…">
       </div>
+      {% if has_relatorio %}
+      <div class="field">
+        <label>📱 Celular do cliente <span style="opacity:.5;font-weight:400">(recebe relatório após disparo)</span></label>
+        <input type="tel" id="client-phone" placeholder="(11) 99999-9999" inputmode="numeric"
+               oninput="this.value=this.value.replace(/[^\d\s()\-+]/g,'')">
+      </div>
+      {% else %}
+      <input type="hidden" id="client-phone" value="">
+      {% endif %}
       <div class="field">
         <textarea id="caption" placeholder="Digite o texto que acompanha a publicação…"></textarea>
       </div>
@@ -1160,6 +1169,7 @@ async function agendarPost() {
       repeat_days:   repeatDays,
       times_per_day: timesPerDay,
       batch_title:   document.getElementById("batch-title").value.trim(),
+      client_phone:  document.getElementById("client-phone").value.trim(),
     }),
   }).then(r=>r.json());
 
@@ -1176,6 +1186,7 @@ async function agendarPost() {
   clearFile();
   document.getElementById("caption").value = "";
   document.getElementById("batch-title").value = "";
+  document.getElementById("client-phone").value = "";
   // Mantém a data atual e avança 1 hora no horário para facilitar próximo agendamento
   const cur = document.getElementById("schedule-dt").value;
   if(cur) {
@@ -1249,20 +1260,40 @@ function buildBatchCard(batchKey, posts) {
 
   const uid = `batch-${batchKey.replace(/[^a-z0-9]/gi,"-")}`;
 
+  // Miniatura da mídia
+  const fname = posts[0].filename || "";
+  const isVideo = posts[0].media_type === "video";
+  const libFile = fname.startsWith("__lib__") ? fname.slice(7) : "";
+  const thumbUrl = libFile
+    ? `/api/library/file/${libFile}`
+    : (fname ? `/api/media/${fname}` : "");
+  const thumbHtml = thumbUrl
+    ? (isVideo
+        ? `<video src="${thumbUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0" muted></video>`
+        : `<img src="${thumbUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0" loading="lazy">`)
+    : `<div style="width:64px;height:64px;border-radius:8px;background:var(--surface2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:24px">${isVideo?"🎬":"🖼️"}</div>`;
+
+  const caption   = posts[0].caption || "";
+  const clientPh  = posts[0].client_phone || "";
+  const captionTrunc = caption.length > 80 ? caption.slice(0,80)+"…" : caption;
+
   wrapper.innerHTML = `
-    <div class="post-card-body" onclick="toggleBatch('${uid}')" style="cursor:pointer;user-select:none">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span id="${uid}-arrow" style="font-size:12px;transition:.2s;flex-shrink:0">▶</span>
+    <div class="post-card-body" onclick="toggleBatch('${uid}')" style="cursor:pointer;user-select:none;padding:14px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        ${thumbHtml}
         <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-            <strong style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</strong>
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px">
+            <strong style="font-size:13px;line-height:1.3">${esc(title)}</strong>
             <span class="post-status ${cls}" style="flex-shrink:0;font-size:10px">${label}</span>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:8px">
+          ${clientPh ? `<div style="font-size:11px;color:var(--muted);margin-bottom:3px">📱 ${esc(clientPh)}</div>` : ""}
+          ${captionTrunc ? `<div style="font-size:12px;color:var(--muted);line-height:1.4;margin-bottom:4px;white-space:pre-wrap">${esc(captionTrunc)}</div>` : ""}
+          <div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span>📦 ${total} disparo${total!==1?"s":""} · ✅ ${sent}/${total}</span>
             ${tags.join("")}
+            <span id="${uid}-arrow" style="font-size:10px;transition:.2s;margin-left:auto">▼</span>
           </div>
-          ${next?`<div style="font-size:11px;color:var(--muted);margin-top:2px">⏭ Próximo: ${next.scheduled_at.replace("T"," ")}</div>`:""}
+          ${next?`<div style="font-size:11px;color:var(--muted);margin-top:3px">⏭ Próximo: ${next.scheduled_at.replace("T"," ")}</div>`:""}
         </div>
       </div>
     </div>
@@ -1280,8 +1311,8 @@ function toggleBatch(uid) {
   const body  = document.getElementById(`${uid}-body`);
   const arrow = document.getElementById(`${uid}-arrow`);
   const open  = body.style.display !== "none";
-  body.style.display  = open ? "none" : "block";
-  arrow.style.transform = open ? "" : "rotate(90deg)";
+  body.style.display    = open ? "none" : "block";
+  arrow.style.transform = open ? "" : "rotate(180deg)";
 }
 
 function buildPostCardInner(p) {

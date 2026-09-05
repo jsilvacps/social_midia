@@ -233,6 +233,12 @@
                       data-active="{% if 'wa_status' in (u.features or '') %}1{% else %}0{% endif %}">
                 🟢 {% if 'wa_status' in (u.features or '') %}WA Status ✓{% else %}WA Status{% endif %}
               </button>
+              <button onclick="toggleFeature({{ u.id }}, 'relatorio', this)"
+                      class="btn btn-sm {% if 'relatorio' in (u.features or '') %}btn-success{% else %}btn-ghost{% endif %}"
+                      title="Liberar/revogar envio de relatório pós-disparo"
+                      data-active="{% if 'relatorio' in (u.features or '') %}1{% else %}0{% endif %}">
+                📊 {% if 'relatorio' in (u.features or '') %}Relatório ✓{% else %}Relatório{% endif %}
+              </button>
             </div>
           </td>
           <td>{{ u.posts_count }}</td>
@@ -418,6 +424,7 @@ const FEAT_LABELS = {
   grupos:     { ico: "🔍", name: "Grupos" },
   instagram:  { ico: "📷", name: "Instagram" },
   wa_status:  { ico: "🟢", name: "WA Status" },
+  relatorio:  { ico: "📊", name: "Relatório" },
 };
 async function toggleFeature(uid, feat, btn) {
   const r = await fetch(`/admin/users/${uid}/feature/${feat}`, {method:"POST"}).then(r=>r.json());

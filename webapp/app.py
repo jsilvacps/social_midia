@@ -118,10 +118,11 @@ def init_db():
     )""")
     # Migrations — posts
     for col, defval in [
-        ("batch_id",    "''"),
-        ("batch_title", "''"),
-        ("wa_status",   "0"),
-        ("user_id",     "0"),
+        ("batch_id",     "''"),
+        ("batch_title",  "''"),
+        ("wa_status",    "0"),
+        ("user_id",      "0"),
+        ("client_phone", "''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
@@ -515,6 +516,62 @@ def ig_post(media_url, caption, dest, cfg, is_video):
             return False, f"Processamento: {err}"
     return ig_publish(cid, cfg)
 
+# ── Relatório WhatsApp ────────────────────────────────────────────────────────
+def _enviar_relatorio(client_phone: str, batch_title: str, result: dict, cfg: dict):
+    """Envia relatório de disparo via WA para o celular do cliente."""
+    if not client_phone:
+        return
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return
+
+    # Monta número com DDI Brasil se não tiver
+    phone = client_phone
+    if not phone.startswith("55"):
+        phone = "55" + phone
+    phone = phone + "@s.whatsapp.net"
+
+    # Resumo dos grupos WA
+    wa_res = result.get("wa", {})
+    ok_list  = [g for g, s in wa_res.items() if s == "ok"]
+    err_list = [g for g, s in wa_res.items() if s != "ok"]
+
+    linhas = [f"📊 *Relatório de Disparo*"]
+    if batch_title:
+        linhas.append(f"📁 Lote: *{batch_title}*")
+    linhas.append(f"🕐 Horário: {now_brasilia().strftime('%d/%m/%Y %H:%M')}")
+    linhas.append("")
+    if ok_list:
+        linhas.append(f"✅ *Enviados com sucesso ({len(ok_list)}):*")
+        for g in ok_list:
+            linhas.append(f"  • {g}")
+    if err_list:
+        linhas.append("")
+        linhas.append(f"❌ *Com erro ({len(err_list)}):*")
+        for g in err_list:
+            linhas.append(f"  • {g}: {wa_res[g]}")
+    # Instagram
+    ig_res = result.get("ig", {})
+    if ig_res:
+        linhas.append("")
+        linhas.append("📸 *Instagram:*")
+        for dest, s in ig_res.items():
+            ico = "✅" if s == "ok" else "❌"
+            linhas.append(f"  {ico} {dest}: {s}")
+
+    msg = "\n".join(linhas)
+    try:
+        requests.post(
+            f"{base}/message/sendText/{instance}",
+            headers={"apikey": cfg.get("evo_token", ""), "Content-Type": "application/json"},
+            json={"number": phone, "text": msg},
+            timeout=15
+        )
+        print(f"[relatorio] enviado para {client_phone}")
+    except Exception as exc:
+        print(f"[relatorio] erro ao enviar: {exc}")
+
 # ── Post Processor ─────────────────────────────────────────────────────────────
 def process_post(post_id: int):
     conn = db()
@@ -605,6 +662,15 @@ def process_post(post_id: int):
                   json.dumps(result, ensure_ascii=False),
                   post_id))
     conn.commit()
+
+    # Envia relatório para o celular do cliente (se informado)
+    client_phone = row["client_phone"] if "client_phone" in row.keys() else ""
+    batch_title  = row["batch_title"]  if "batch_title"  in row.keys() else ""
+    if client_phone:
+        import threading as _thr
+        _thr.Thread(target=_enviar_relatorio,
+                    args=(client_phone, batch_title, result, cfg),
+                    daemon=True).start()
     conn.close()
 
 # ── Scheduler Thread ───────────────────────────────────────────────────────────
@@ -839,6 +905,7 @@ def index():
                            has_grupos=user_has_feature(u, "grupos") if u else False,
                            has_instagram=user_has_feature(u, "instagram") if u else False,
                            has_wa_status=user_has_feature(u, "wa_status") if u else False,
+                           has_relatorio=user_has_feature(u, "relatorio") if u else False,
                            trial_days_left=trial_days_left)
 
 # ── Media serve (público – Evolution API chama de fora) ───────────────────────
@@ -1107,6 +1174,9 @@ def api_create_post():
     repeat_days   = max(1, min(int(data.get("repeat_days",   1) or 1), 30))
     times_per_day = max(1, min(int(data.get("times_per_day", 1) or 1), 24))
     batch_title   = data.get("batch_title", "").strip()
+    # Celular do cliente só salvo se o usuário tiver a feature "relatorio"
+    _raw_phone    = data.get("client_phone", "") or ""
+    client_phone  = re.sub(r"\D", "", _raw_phone) if user_has_feature(u, "relatorio") else ""
 
     try:
         base_dt = datetime.fromisoformat(scheduled_at)
@@ -1125,10 +1195,11 @@ def api_create_post():
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         cur = conn.execute("""INSERT INTO posts
             (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-             scheduled_at,status,created_at,batch_id,batch_title)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?)""",
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?)""",
             (uid, caption, filename, media_type, wa_groups_json,
-             ig_feed, ig_stories, ig_reels, wa_status, sched, created_at, batch_id, batch_title))
+             ig_feed, ig_stories, ig_reels, wa_status, sched, created_at, batch_id, batch_title,
+             client_phone))
         if i == 0:
             first_id = cur.lastrowid
 

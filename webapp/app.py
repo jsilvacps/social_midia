@@ -1070,6 +1070,36 @@ def admin_wa_qr(uid):
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
+@app.route("/api/admin/users/<int:uid>/wa-pairing", methods=["POST"])
+@require_admin
+def admin_wa_pairing(uid):
+    """Gera código de pareamento (8 dígitos) para vincular sem QR Code."""
+    data     = request.get_json(force=True) or {}
+    phone    = (data.get("phone", "") or "").strip().replace(" ","").replace("-","").replace("(","").replace(")","").replace("+","")
+    if not phone:
+        return jsonify({"ok": False, "error": "Informe o número do celular"}), 400
+    cfg      = load_config(user_id=uid)
+    base     = (cfg.get("evo_url") or "").rstrip("/")
+    apikey   = cfg.get("evo_token", "")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return jsonify({"ok": False, "error": "Instância não configurada — crie primeiro"})
+    try:
+        r = requests.post(
+            f"{base}/instance/pairingCode/{instance}",
+            headers={"apikey": apikey, "Content-Type": "application/json"},
+            json={"number": phone},
+            timeout=15
+        )
+        d = r.json()
+        print(f"[wa-pairing] uid={uid} phone={phone}: {r.status_code} {d}")
+        code = d.get("code") or d.get("pairingCode") or d.get("pairing_code") or ""
+        if code:
+            return jsonify({"ok": True, "code": code})
+        return jsonify({"ok": False, "error": d.get("message") or "Código não retornado", "raw": d})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
 @app.route("/api/admin/users/<int:uid>/wa-status")
 @require_admin
 def admin_wa_status(uid):

@@ -118,11 +118,13 @@ def init_db():
     )""")
     # Migrations — posts
     for col, defval in [
-        ("batch_id",     "''"),
-        ("batch_title",  "''"),
-        ("wa_status",    "0"),
-        ("user_id",      "0"),
-        ("client_phone", "''"),
+        ("batch_id",      "''"),
+        ("batch_title",   "''"),
+        ("wa_status",     "0"),
+        ("user_id",       "0"),
+        ("client_phone",  "''"),
+        ("suspend_from",  "''"),
+        ("suspend_to",    "''"),
     ]:
         try:
             conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
@@ -673,19 +675,46 @@ def process_post(post_id: int):
                     daemon=True).start()
     conn.close()
 
+def _in_suspend_window(suspend_from: str, suspend_to: str, now_hm: str) -> bool:
+    """Verifica se now_hm (HH:MM) está dentro da janela de suspensão.
+    Suporta virada de meia-noite: ex. suspend_from=22:00, suspend_to=06:00."""
+    if not suspend_from or not suspend_to:
+        return False
+    try:
+        sf = tuple(int(x) for x in suspend_from.split(":"))
+        st = tuple(int(x) for x in suspend_to.split(":"))
+        nw = tuple(int(x) for x in now_hm.split(":"))
+        if sf < st:   # mesma faixa do dia, ex: 08:00 – 12:00
+            return sf <= nw < st
+        else:          # cruza meia-noite, ex: 22:00 – 06:00
+            return nw >= sf or nw < st
+    except Exception:
+        return False
+
 # ── Scheduler Thread ───────────────────────────────────────────────────────────
 def _scheduler_loop():
     while True:
         try:
-            now  = now_brasilia().strftime("%Y-%m-%dT%H:%M")
+            now_dt   = now_brasilia()
+            now_str  = now_dt.strftime("%Y-%m-%dT%H:%M")
+            now_hm   = now_dt.strftime("%H:%M")
             conn = db()
             rows = conn.execute(
-                "SELECT id FROM posts WHERE status='pending' AND scheduled_at<=?",
-                (now + ":59",)
+                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='pending' AND scheduled_at<=?",
+                (now_str + ":59",)
             ).fetchall()
             conn.close()
             for row in rows:
-                threading.Thread(target=process_post, args=(row["id"],), daemon=True).start()
+                sf = row["suspend_from"] or ""
+                st = row["suspend_to"]   or ""
+                if _in_suspend_window(sf, st, now_hm):
+                    print(f"[scheduler] post {row['id']} suspenso ({now_hm} em {sf}–{st})")
+                    # Marca como suspenso para não reprocessar
+                    c = db()
+                    c.execute("UPDATE posts SET status='suspended' WHERE id=?", (row["id"],))
+                    c.commit(); c.close()
+                else:
+                    threading.Thread(target=process_post, args=(row["id"],), daemon=True).start()
         except Exception as exc:
             print(f"[scheduler] {exc}")
         time.sleep(30)
@@ -1177,6 +1206,17 @@ def api_create_post():
     # Celular do cliente só salvo se o usuário tiver a feature "relatorio"
     _raw_phone    = data.get("client_phone", "") or ""
     client_phone  = re.sub(r"\D", "", _raw_phone) if user_has_feature(u, "relatorio") else ""
+    # Janela de suspensão (só faz sentido para lotes com repeat_days > 1)
+    suspend_from = ""
+    suspend_to   = ""
+    if repeat_days > 1 and data.get("suspend_enabled"):
+        _sf = (data.get("suspend_from") or "").strip()
+        _st = (data.get("suspend_to")   or "").strip()
+        # Valida formato HH:MM
+        import re as _re
+        if _re.match(r"^\d{2}:\d{2}$", _sf) and _re.match(r"^\d{2}:\d{2}$", _st) and _sf != _st:
+            suspend_from = _sf
+            suspend_to   = _st
 
     try:
         base_dt = datetime.fromisoformat(scheduled_at)
@@ -1195,11 +1235,11 @@ def api_create_post():
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         cur = conn.execute("""INSERT INTO posts
             (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-             scheduled_at,status,created_at,batch_id,batch_title,client_phone)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?)""",
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?)""",
             (uid, caption, filename, media_type, wa_groups_json,
              ig_feed, ig_stories, ig_reels, wa_status, sched, created_at, batch_id, batch_title,
-             client_phone))
+             client_phone, suspend_from, suspend_to))
         if i == 0:
             first_id = cur.lastrowid
 

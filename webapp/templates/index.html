@@ -576,6 +576,33 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </div>
       </div>
       <div id="schedule-summary" style="margin-top:8px;font-size:12px;color:var(--muted);display:none"></div>
+
+      <!-- Janela de suspensão (aparece quando repeat_days > 1) -->
+      <div id="suspend-block" style="display:none;margin-top:12px;padding:12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;margin-bottom:0">
+          <input type="checkbox" id="suspend-enabled" onchange="toggleSuspend()" style="width:16px;height:16px;accent-color:var(--primary)">
+          <span style="font-size:13px;font-weight:600">🔕 Suspender envio em horário específico</span>
+        </label>
+        <div id="suspend-times" style="display:none;margin-top:12px;display:none">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+            Disparos agendados dentro deste intervalo serão <strong>pulados</strong> automaticamente.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="field" style="margin:0;flex:1;min-width:100px">
+              <label style="font-size:11px">Das</label>
+              <input type="time" id="suspend-from" value="22:00">
+            </div>
+            <span style="color:var(--muted);font-size:13px;padding-top:16px">→</span>
+            <div class="field" style="margin:0;flex:1;min-width:100px">
+              <label style="font-size:11px">Até</label>
+              <input type="time" id="suspend-to" value="06:00">
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px">
+            💡 Suporta virada da meia-noite (ex: 22:00 → 06:00 pula todos os disparos entre 22h e 6h)
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Submit -->
@@ -876,11 +903,20 @@ function setNow() {
   updateScheduleSummary();
 }
 
+function toggleSuspend() {
+  const enabled = document.getElementById("suspend-enabled").checked;
+  const times   = document.getElementById("suspend-times");
+  times.style.display = enabled ? "block" : "none";
+}
+
 function updateScheduleSummary() {
   const el = document.getElementById("schedule-summary");
   const dtVal = document.getElementById("schedule-dt").value;
   const days  = parseInt(document.getElementById("repeat-days").value) || 1;
   const times = parseInt(document.getElementById("times-per-day").value) || 1;
+  // Mostra/oculta bloco de suspensão
+  const suspendBlock = document.getElementById("suspend-block");
+  if(suspendBlock) suspendBlock.style.display = days > 1 ? "block" : "none";
   if(!dtVal || (days === 1 && times === 1)) { el.style.display="none"; return; }
 
   const base = new Date(dtVal);
@@ -1166,10 +1202,13 @@ async function agendarPost() {
       ig_stories:   dests["ig-stories"],
       ig_reels:     dests["ig-reels"],
       scheduled_at:  dt,
-      repeat_days:   repeatDays,
-      times_per_day: timesPerDay,
-      batch_title:   document.getElementById("batch-title").value.trim(),
-      client_phone:  document.getElementById("client-phone").value.trim(),
+      repeat_days:      repeatDays,
+      times_per_day:    timesPerDay,
+      batch_title:      document.getElementById("batch-title").value.trim(),
+      client_phone:     document.getElementById("client-phone").value.trim(),
+      suspend_enabled:  document.getElementById("suspend-enabled")?.checked || false,
+      suspend_from:     document.getElementById("suspend-from")?.value || "",
+      suspend_to:       document.getElementById("suspend-to")?.value   || "",
     }),
   }).then(r=>r.json());
 
@@ -1229,10 +1268,13 @@ async function loadPosts() {
 }
 
 function batchSummaryStatus(posts) {
-  if(posts.some(p=>p.status==="sending"))  return {label:"📡 Enviando", cls:"s-sending"};
-  if(posts.every(p=>p.status==="sent"))    return {label:"✅ Enviados", cls:"s-sent"};
-  if(posts.some(p=>p.status==="failed"))   return {label:"❌ Com falha", cls:"s-failed"};
-  if(posts.some(p=>p.status==="partial"))  return {label:"⚠️ Parcial",  cls:"s-partial"};
+  if(posts.some(p=>p.status==="sending"))   return {label:"📡 Enviando",  cls:"s-sending"};
+  if(posts.every(p=>p.status==="sent"))     return {label:"✅ Enviados",  cls:"s-sent"};
+  const active = posts.filter(p=>p.status!=="suspended");
+  if(active.length && active.every(p=>p.status==="sent")) return {label:"✅ Enviados",  cls:"s-sent"};
+  if(posts.some(p=>p.status==="failed"))    return {label:"❌ Com falha", cls:"s-failed"};
+  if(posts.some(p=>p.status==="partial"))   return {label:"⚠️ Parcial",  cls:"s-partial"};
+  if(posts.every(p=>p.status==="suspended")) return {label:"🔕 Suspenso", cls:"s-pending"};
   return {label:"🕐 Agendado", cls:"s-pending"};
 }
 
@@ -1317,8 +1359,8 @@ function toggleBatch(uid) {
 
 function buildPostCardInner(p) {
   const result   = typeof p.result === "string" ? JSON.parse(p.result||"{}") : (p.result||{});
-  const statusMap = {pending:"🕐",sending:"📡",sent:"✅",failed:"❌",partial:"⚠️"};
-  const classMap  = {pending:"s-pending",sending:"s-sending",sent:"s-sent",failed:"s-failed",partial:"s-partial"};
+  const statusMap = {pending:"🕐",sending:"📡",sent:"✅",failed:"❌",partial:"⚠️",suspended:"🔕"};
+  const classMap  = {pending:"s-pending",sending:"s-sending",sent:"s-sent",failed:"s-failed",partial:"s-partial",suspended:"s-pending"};
 
   let resultHtml = "";
   if(p.status !== "pending" && (Object.keys(result.wa||{}).length || Object.keys(result.ig||{}).length)) {
@@ -1331,8 +1373,10 @@ function buildPostCardInner(p) {
   return `<div id="post-${p.id}" style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-        <span class="post-status ${classMap[p.status]||"s-pending"}" style="font-size:10px">${statusMap[p.status]||"🕐"} ${p.status}</span>
+        <span class="post-status ${classMap[p.status]||"s-pending"}" style="font-size:10px">${statusMap[p.status]||"🕐"} ${p.status==="suspended"?"Suspenso":p.status}</span>
         <span style="color:var(--muted)">📅 ${(p.scheduled_at||"").replace("T"," ")}</span>
+        ${p.status==="suspended"&&p.suspend_from?`<span style="color:var(--muted);font-size:10px">🔕 ${p.suspend_from}–${p.suspend_to}</span>`:""}
+
         <span style="color:var(--muted)">#${p.id}</span>
       </div>
       ${resultHtml}

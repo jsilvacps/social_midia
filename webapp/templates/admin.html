@@ -706,7 +706,7 @@ function togglePairingInput() {
 }
 
 async function requestPairingCode() {
-  const inputEl = document.querySelector("#wa-pairing-input input");
+  const inputEl = document.getElementById("wa-phone-input");
   const phone = (inputEl ? inputEl.value : "").replace(/\D/g,"");
   if (!phone || phone.length < 10) { toast("❌ Informe o número com DDD (ex: 11999998888)"); return; }
   const btn = document.getElementById("wa-btn-pairing-send");
@@ -717,12 +717,14 @@ async function requestPairingCode() {
     body: JSON.stringify({phone: "55" + phone})
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (btn) { btn.disabled = false; btn.textContent = "Gerar código"; }
-  const box = document.getElementById("wa-pairing-box");
+  const boxWrap = document.getElementById("wa-pairing-box");
+  const codeEl  = document.getElementById("wa-pairing-code");
   if (r.ok && r.code) {
-    if (box) { box.textContent = r.code; box.style.display = "block"; }
+    if (codeEl)  codeEl.textContent = r.code;
+    if (boxWrap) boxWrap.style.display = "block";
     toast("✅ Código gerado! Digite no WhatsApp → Aparelhos conectados → Vincular com número");
   } else {
-    if (box) box.style.display = "none";
+    if (boxWrap) boxWrap.style.display = "none";
     toast("❌ " + (r.error || "Erro ao gerar código"));
   }
 }

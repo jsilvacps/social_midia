@@ -630,7 +630,7 @@ async function saveNewUser() {
 }
 
 // ── WA Instance / QR Modal ──────────────────────────────────────────────────
-let waUid = null, waName = "", waPollTimer = null;
+var waUid = null, waName = "", waPollTimer = null;
 
 function openWaModal(uid, name) {
   waUid = uid; waName = name;
@@ -907,8 +907,8 @@ async function disconnectWa() {
   </div>
 </div>
 <script>
-  // fechar modal clicando fora — precisa estar após o DOM existir
-  document.getElementById("wa-modal").addEventListener("click", function(e) {
+  var _waMod = document.getElementById("wa-modal");
+  if (_waMod) _waMod.addEventListener("click", function(e) {
     if (e.target === this) closeWaModal();
   });
 </script>

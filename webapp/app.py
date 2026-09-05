@@ -1069,6 +1069,7 @@ def change_password():
                          (_hash_pw(new_pw), u["id"]))
             conn.commit()
             conn.close()
+            session["show_welcome"] = True
             return redirect("/")
     return render_template("change_password.html", error=error, user_name=u.get("name") or u.get("email"))
 
@@ -1101,12 +1102,14 @@ def index():
             trial_days_left = max(0, diff.days)
         except Exception:
             pass
+    show_welcome = session.pop("show_welcome", False)
     return render_template("index.html", current_user=u,
                            has_grupos=user_has_feature(u, "grupos") if u else False,
                            has_instagram=user_has_feature(u, "instagram") if u else False,
                            has_wa_status=user_has_feature(u, "wa_status") if u else False,
                            has_relatorio=user_has_feature(u, "relatorio") if u else False,
-                           trial_days_left=trial_days_left)
+                           trial_days_left=trial_days_left,
+                           show_welcome=show_welcome)
 
 # ── Media serve (público – Evolution API chama de fora) ───────────────────────
 @app.route("/api/media/<filename>")

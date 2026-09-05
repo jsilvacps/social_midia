@@ -604,7 +604,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   <!-- ══ Tab: Config ═════════════════════════════════════════ -->
   <section class="tab" id="tab-config">
 
-    <!-- Evolution API -->
+    <!-- Evolution API (somente admin) -->
+    {% if current_user.is_admin %}
     <div class="card">
       <p class="card-title">💬 WhatsApp – Evolution API</p>
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -627,6 +628,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <div id="evo-status" class="tip" style="display:none"></div>
       </div>
     </div>
+    {% endif %}
 
     <!-- Conectar WhatsApp -->
     <div class="card" id="wa-connect-card">

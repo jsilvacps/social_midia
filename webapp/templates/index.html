@@ -1770,6 +1770,92 @@ function useFromLibrary(f) {
 }
 </script>
 
+<!-- Banner de instalação PWA -->
+<div id="pwa-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:1900;padding:12px 16px;background:#0f1829;border-top:1px solid #1e2d4a;box-shadow:0 -4px 24px rgba(0,0,0,.5)">
+  <div style="max-width:520px;margin:0 auto">
+
+    <!-- Android: botão nativo -->
+    <div id="pwa-android" style="display:none;align-items:center;gap:12px">
+      <div style="font-size:28px">📲</div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:14px">Instalar ZapShot no celular</div>
+        <div style="font-size:12px;color:#64748b">Acesse mais rápido direto da tela inicial</div>
+      </div>
+      <button id="pwa-install-btn" style="background:linear-gradient(135deg,#00e5a0,#3b82f6);border:none;border-radius:10px;padding:10px 18px;color:#0f1829;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap">
+        ⚡ Instalar
+      </button>
+      <button onclick="dismissPwaBanner()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:20px;padding:4px">×</button>
+    </div>
+
+    <!-- iOS: instrução manual -->
+    <div id="pwa-ios" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:700;font-size:14px">📲 Instalar ZapShot no iPhone</div>
+        <button onclick="dismissPwaBanner()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:20px;padding:4px">×</button>
+      </div>
+      <div style="display:flex;gap:16px;align-items:center;font-size:13px;color:#94a3b8">
+        <div style="text-align:center;min-width:52px">
+          <div style="font-size:22px">1️⃣</div>
+          <div style="font-size:11px;margin-top:2px">Toque em<br><strong style="color:#e2e8f0">Compartilhar</strong><br>↑</div>
+        </div>
+        <div style="color:#1e2d4a;font-size:20px">›</div>
+        <div style="text-align:center;min-width:52px">
+          <div style="font-size:22px">2️⃣</div>
+          <div style="font-size:11px;margin-top:2px">Role e toque<br><strong style="color:#e2e8f0">"Adicionar à<br>Tela de Início"</strong></div>
+        </div>
+        <div style="color:#1e2d4a;font-size:20px">›</div>
+        <div style="text-align:center;min-width:52px">
+          <div style="font-size:22px">3️⃣</div>
+          <div style="font-size:11px;margin-top:2px">Toque em<br><strong style="color:#e2e8f0">Adicionar</strong><br>✅</div>
+        </div>
+        <div style="flex:1;text-align:right">
+          <div style="background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.3);border-radius:8px;padding:6px 10px;font-size:11px;color:#00e5a0">
+            ⚠️ Use o<br><strong>Safari</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  // Já está instalado como PWA? Não mostrar nada
+  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) return;
+  // Usuário já dispensou?
+  try { if (localStorage.getItem('pwa_dismissed')) return; } catch(e) {}
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const banner = document.getElementById('pwa-banner');
+
+  if (isIOS) {
+    banner.style.display = 'block';
+    document.getElementById('pwa-ios').style.display = 'block';
+  } else if (isAndroid) {
+    // Captura evento beforeinstallprompt
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      window._pwaPrompt = e;
+      banner.style.display = 'block';
+      document.getElementById('pwa-android').style.display = 'flex';
+      document.getElementById('pwa-install-btn').addEventListener('click', function() {
+        window._pwaPrompt.prompt();
+        window._pwaPrompt.userChoice.then(function(r) {
+          if (r.outcome === 'accepted') dismissPwaBanner();
+        });
+      });
+    });
+  }
+})();
+
+function dismissPwaBanner() {
+  try { localStorage.setItem('pwa_dismissed', '1'); } catch(e) {}
+  document.getElementById('pwa-banner').style.display = 'none';
+}
+</script>
+
 {% if show_welcome %}
 <!-- Modal Boas-vindas (primeiro acesso) -->
 <div id="welcome-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px">

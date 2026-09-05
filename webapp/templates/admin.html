@@ -629,142 +629,102 @@ async function saveNewUser() {
   }
 }
 
-// ── WA Instance / QR Modal ──────────────────────────────────────────────────
+// ── WA Instance Modal ────────────────────────────────────────────────────────
 var waUid = null, waName = "", waPollTimer = null;
 
-function openWaModal(uid, name) {
-  waUid = uid; waName = name;
-  var modal = document.getElementById("wa-modal");
-  if (!modal) return;
-  document.getElementById("wa-modal-title").textContent = `📱 WhatsApp — ${name}`;
-  var qrImg = document.getElementById("wa-qr-img"); if(qrImg){qrImg.src="";qrImg.style.display="none";}
-  document.getElementById("wa-status-badge").textContent = "…";
-  document.getElementById("wa-status-badge").style.color = "var(--muted)";
-  var pb = document.getElementById("wa-phone-badge"); if(pb) pb.style.display="none";
-  var ch = document.getElementById("wa-connect-hint"); if(ch) ch.style.display="none";
-  modal.style.display = "flex";
-  clearInterval(waPollTimer);
-  loadWaStatus(uid);
-}
-function closeWaModal() {
-  document.getElementById("wa-modal").style.display = "none";
-  clearInterval(waPollTimer);
-  waPollTimer = null; waUid = null;
-}
+function _waEl(id) { return document.getElementById(id); }
 
-async function loadWaStatus(uid) {
-  const r = await fetch(`/api/admin/users/${uid}/wa-status`).then(r=>r.json()).catch(()=>({ok:false}));
-  const badge     = document.getElementById("wa-status-badge");
-  const btnCreate = document.getElementById("wa-btn-create");
-  const btnDisc   = document.getElementById("wa-btn-disc");
-  // elementos opcionais (podem não existir no DOM)
-  const fn = id => document.getElementById(id);
+function _waSetState(state, phone) {
+  // state: "none" | "waiting" | "connected"
+  var badge   = _waEl("wa-status-badge");
+  var pbadge  = _waEl("wa-phone-badge");
+  var hint    = _waEl("wa-connect-hint");
+  var btnC    = _waEl("wa-btn-create");
+  var btnD    = _waEl("wa-btn-disc");
 
-  if (!r.ok) {
+  // reset tudo
+  if(pbadge) pbadge.style.display = "none";
+  if(hint)   hint.style.display   = "none";
+  if(btnC)   btnC.style.display   = "none";
+  if(btnD)   btnD.style.display   = "none";
+
+  if (state === "none") {
     badge.textContent = "🔴 Sem instância";
     badge.style.color = "var(--danger)";
-    if(btnCreate) btnCreate.style.display = "inline-flex";
-    if(btnDisc)   btnDisc.style.display   = "none";
-    clearInterval(waPollTimer);
-  } else {
-    const st = (r.state || "").toLowerCase();
-    if (st === "open" || st === "connected") {
-      badge.textContent = "🟢 Conectado";
-      badge.style.color = "var(--green)";
-      var phoneBadge = fn("wa-phone-badge");
-      var phoneNum   = fn("wa-phone-num");
-      if (r.phone && phoneBadge && phoneNum) {
-        var p = r.phone;
-        if (p.startsWith("55") && p.length >= 12) p = "+55 (" + p.slice(2,4) + ") " + p.slice(4,9) + "-" + p.slice(9);
-        phoneNum.textContent = p;
-        phoneBadge.style.display = "block";
-      } else if (phoneBadge) { phoneBadge.style.display = "none"; }
-      if(btnCreate) btnCreate.style.display = "none";
-      if(btnDisc)   btnDisc.style.display   = "inline-flex";
-      clearInterval(waPollTimer);
-    } else {
-      badge.textContent = "🟡 Aguardando conexão do cliente";
-      badge.style.color = "var(--warning)";
-      var hint = fn("wa-connect-hint");
-      if (hint) hint.style.display = "block";
-      if(btnCreate) btnCreate.style.display = "none";
-      if(btnDisc)   btnDisc.style.display   = "inline-flex";
-      // polling a cada 5s para detectar quando o cliente conectar
-      if (!waPollTimer) {
-        waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 5000);
-      }
+    if(btnC) btnC.style.display = "inline-flex";
+    clearInterval(waPollTimer); waPollTimer = null;
+
+  } else if (state === "connected") {
+    badge.textContent = "🟢 Conectado";
+    badge.style.color = "var(--green)";
+    if (phone && pbadge) {
+      var p = phone;
+      if (p.startsWith("55") && p.length >= 12)
+        p = "+55 (" + p.slice(2,4) + ") " + p.slice(4,9) + "-" + p.slice(9);
+      _waEl("wa-phone-num").textContent = p;
+      pbadge.style.display = "block";
     }
+    if(btnD) btnD.style.display = "inline-flex";
+    clearInterval(waPollTimer); waPollTimer = null;
+
+  } else { // waiting
+    badge.textContent = "🟡 Aguardando conexão do cliente";
+    badge.style.color = "#f59e0b";
+    if(hint) hint.style.display = "block";
+    if(btnD) btnD.style.display = "inline-flex";
+    if (!waPollTimer)
+      waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 5000);
   }
 }
 
-function togglePairingInput() {
-  const box = document.getElementById("wa-pairing-input");
-  const btn = document.getElementById("wa-btn-pairing-send");
-  if (!box) return;
-  const visible = box.style.display !== "none";
-  box.style.display = visible ? "none" : "flex";
-  if (btn) btn.style.display = visible ? "none" : "inline-flex";
-  if (!visible) box.querySelector("input").focus();
+function openWaModal(uid, name) {
+  waUid = uid; waName = name;
+  var modal = _waEl("wa-modal");
+  if (!modal) return;
+  _waEl("wa-modal-title").textContent = "📱 WhatsApp — " + name;
+  _waEl("wa-status-badge").textContent = "…";
+  _waEl("wa-status-badge").style.color = "var(--muted)";
+  var pb = _waEl("wa-phone-badge"); if(pb) pb.style.display="none";
+  var ch = _waEl("wa-connect-hint"); if(ch) ch.style.display="none";
+  var bc = _waEl("wa-btn-create"); if(bc) bc.style.display="none";
+  var bd = _waEl("wa-btn-disc");   if(bd) bd.style.display="none";
+  modal.style.display = "flex";
+  clearInterval(waPollTimer); waPollTimer = null;
+  loadWaStatus(uid);
 }
 
-async function requestPairingCode() {
-  const inputEl = document.getElementById("wa-phone-input");
-  const phone = (inputEl ? inputEl.value : "").replace(/\D/g,"");
-  if (!phone || phone.length < 10) { toast("❌ Informe o número com DDD (ex: 11999998888)"); return; }
-  const btn = document.getElementById("wa-btn-pairing-send");
-  if (btn) { btn.disabled = true; btn.textContent = "Gerando…"; }
-  const r = await fetch(`/api/admin/users/${waUid}/wa-pairing`, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({phone: "55" + phone})
-  }).then(r=>r.json()).catch(()=>({ok:false}));
-  if (btn) { btn.disabled = false; btn.textContent = "Gerar código"; }
-  const boxWrap = document.getElementById("wa-pairing-box");
-  const codeEl  = document.getElementById("wa-pairing-code");
-  if (r.ok && r.code) {
-    if (codeEl)  codeEl.textContent = r.code;
-    if (boxWrap) boxWrap.style.display = "block";
-    toast("✅ Código gerado! Digite no WhatsApp → Aparelhos conectados → Vincular com número");
+function closeWaModal() {
+  var m = _waEl("wa-modal"); if(m) m.style.display = "none";
+  clearInterval(waPollTimer); waPollTimer = null; waUid = null;
+}
+
+async function loadWaStatus(uid) {
+  var r = await fetch("/api/admin/users/" + uid + "/wa-status").then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if (!r.ok || r.state === "not_configured" || r.state === "error") {
+    _waSetState("none");
   } else {
-    if (boxWrap) boxWrap.style.display = "none";
-    toast("❌ " + (r.error || "Erro ao gerar código"));
+    var st = (r.state || "").toLowerCase();
+    if (st === "open" || st === "connected") _waSetState("connected", r.phone || "");
+    else _waSetState("waiting");
   }
 }
 
 async function createWaInstance() {
-  const btn = document.getElementById("wa-btn-create");
-  btn.disabled = true; btn.textContent = "Criando…";
-  const r = await fetch(`/api/admin/users/${waUid}/wa-instance`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
-  btn.disabled = false; btn.textContent = "➕ Criar Instância";
-  if (r.ok) { toast("✅ Instância criada! Carregando QR…"); loadWaStatus(waUid); }
+  var btn = _waEl("wa-btn-create");
+  if(btn){ btn.disabled=true; btn.textContent="⏳ Criando…"; }
+  var r = await fetch("/api/admin/users/" + waUid + "/wa-instance", {method:"POST"}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if(btn){ btn.disabled=false; btn.textContent="➕ Criar Instância"; }
+  if (r.ok) { toast("✅ Instância criada! Aguardando cliente conectar."); loadWaStatus(waUid); }
   else toast("❌ " + (r.error || "Erro ao criar instância"));
 }
 
-async function loadWaQr(uid) {
-  const r = await fetch(`/api/admin/users/${uid}/wa-qr`).then(r=>r.json()).catch(()=>({ok:false}));
-  const qrImg = document.getElementById("wa-qr-img");
-  if (r.ok && r.qr_base64) {
-    qrImg.src = "data:image/png;base64," + r.qr_base64;
-    qrImg.style.display = "block";
-  }
-}
-
 async function disconnectWa() {
-  const btn = document.getElementById("wa-btn-disc");
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Desconectando…"; }
-  const r = await fetch(`/api/admin/users/${waUid}/wa-disconnect`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
-  if (btn) { btn.disabled = false; btn.textContent = "🔌 Desconectar"; }
-  if (r.ok) {
-    toast("✅ Instância removida!");
-    clearInterval(waPollTimer); waPollTimer = null;
-    // Força UI para "Sem instância" + mostra botão Criar
-    document.getElementById("wa-status-badge").textContent = "🔴 Sem instância";
-    document.getElementById("wa-status-badge").style.color = "var(--danger)";
-    var pb = document.getElementById("wa-phone-badge"); if(pb) pb.style.display="none";
-    var ch = document.getElementById("wa-connect-hint"); if(ch) ch.style.display="none";
-    var bc = document.getElementById("wa-btn-create"); if(bc) bc.style.display="inline-flex";
-    var bd = document.getElementById("wa-btn-disc");   if(bd) bd.style.display="none";
-  } else toast("❌ " + (r.error || "Erro ao desconectar"));
+  var btn = _waEl("wa-btn-disc");
+  if(btn){ btn.disabled=true; btn.textContent="⏳ Removendo…"; }
+  var r = await fetch("/api/admin/users/" + waUid + "/wa-disconnect", {method:"POST"}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if(btn){ btn.disabled=false; btn.textContent="🔌 Desconectar"; }
+  if (r.ok) { toast("✅ Instância removida!"); _waSetState("none"); }
+  else toast("❌ " + (r.error || "Erro ao remover"));
 }
 
 // Load grupos WA

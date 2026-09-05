@@ -519,8 +519,10 @@ function openNewUserModal() {
   document.getElementById("nu-name").value = "";
   document.getElementById("nu-email").value = "";
   document.getElementById("nu-password").value = "";
+  document.getElementById("nu-phone").value = "";
   document.getElementById("nu-plan").value = "trial";
   document.getElementById("nu-days").value = "30";
+  document.getElementById("nu-days-wrap").style.display = "";
   document.getElementById("new-user-modal").style.display = "flex";
 }
 function closeNewUserModal() {
@@ -537,6 +539,7 @@ async function saveNewUser() {
   const email    = document.getElementById("nu-email").value.trim();
   const name     = document.getElementById("nu-name").value.trim();
   const password = document.getElementById("nu-password").value.trim();
+  const phone    = document.getElementById("nu-phone").value.trim();
   const plan     = document.getElementById("nu-plan").value;
   const days     = parseInt(document.getElementById("nu-days").value) || 30;
 
@@ -546,15 +549,16 @@ async function saveNewUser() {
   const r = await fetch("/api/admin/create-user", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({email, name, password, plan, trial_days: days})
+    body: JSON.stringify({email, name, password, phone, plan, trial_days: days})
   }).then(r=>r.json()).catch(()=>({ok:false, error:"Erro de rede"}));
 
   btn.disabled = false; btn.textContent = "✅ Criar usuário";
 
   if (r.ok) {
-    toast(`✅ Usuário ${email} criado! Trial: ${days} dias`);
+    const waMsg = r.wa_sent ? " · 📱 Boas-vindas enviado no WA!" : (phone ? " · ⚠️ WA não enviado (verifique config)" : "");
+    toast(`✅ Usuário criado!${waMsg}`);
     closeNewUserModal();
-    setTimeout(() => location.reload(), 1200);
+    setTimeout(() => location.reload(), 1500);
   } else {
     toast("❌ " + (r.error || "Erro ao criar usuário"));
   }
@@ -676,6 +680,11 @@ document.getElementById("wa-modal").addEventListener("click", function(e) {
       <div>
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Nome</label>
         <input id="nu-name" type="text" placeholder="Ex: João Silva"
+               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">📱 WhatsApp do cliente <span style="color:#3b82f6">(envia boas-vindas automático)</span></label>
+        <input id="nu-phone" type="tel" placeholder="5511999998888 (com DDI e DDD)"
                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
       </div>
       <div>

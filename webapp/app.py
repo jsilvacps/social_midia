@@ -1028,6 +1028,7 @@ def api_admin_create_user():
     password = (data.get("password", "") or "").strip()
     plan     = data.get("plan", "trial")
     days     = int(data.get("trial_days", 3))
+    phone    = (data.get("phone", "") or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
 
     if not email or not password:
         return jsonify({"ok": False, "error": "Email e senha são obrigatórios"}), 400
@@ -1045,11 +1046,59 @@ def api_admin_create_user():
         )
         conn.commit()
         user = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        uid  = user["id"]
         conn.close()
-        return jsonify({"ok": True, "uid": user["id"], "trial_expires_at": trial_exp})
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({"ok": False, "error": "Email já cadastrado"}), 400
+
+    # Envia mensagem de boas-vindas via WhatsApp (em background, sem bloquear)
+    wa_sent = False
+    if phone:
+        try:
+            admin_cfg = _admin_evo_cfg() or {}
+            evo_url   = (admin_cfg.get("evo_url") or "").rstrip("/")
+            evo_tok   = admin_cfg.get("evo_token", "")
+            instance  = admin_cfg.get("evo_instance", f"zapshot_u{session.get('user_id',1)}")
+            app_url   = (admin_cfg.get("app_url") or request.host_url.rstrip("/"))
+
+            nome_cli  = name or email.split("@")[0]
+            trial_txt = f"Seu acesso é válido por *{days} dias* de teste gratuito." if plan == "trial" else "Seu acesso está ativo."
+
+            msg = (
+                f"👋 Olá, *{nome_cli}*! Seja bem-vindo(a) ao *⚡ ZapShot*!\n\n"
+                f"Sua conta foi criada com sucesso. Aqui estão seus dados de acesso:\n\n"
+                f"🔗 *Link do app:* {app_url}\n"
+                f"📧 *Email:* {email}\n"
+                f"🔑 *Senha temporária:* {password}\n\n"
+                f"⚠️ No primeiro acesso você será solicitado a criar uma senha pessoal.\n\n"
+                f"📲 *Como instalar no celular:*\n"
+                f"1. Abra o link acima no navegador (Chrome ou Safari)\n"
+                f"2. Toque no menu do navegador ⋮\n"
+                f"3. Selecione *\"Adicionar à tela inicial\"*\n"
+                f"4. Pronto! O app fica salvo como ícone no seu celular 📱\n\n"
+                f"{trial_txt}\n\n"
+                f"Qualquer dúvida, me chame aqui! 🚀"
+            )
+
+            import threading
+            def _enviar():
+                try:
+                    requests.post(
+                        f"{evo_url}/message/sendText/{instance}",
+                        headers={"apikey": evo_tok, "Content-Type": "application/json"},
+                        json={"number": phone, "text": msg},
+                        timeout=15
+                    )
+                    print(f"[create-user] boas-vindas WA enviado para {phone}")
+                except Exception as exc:
+                    print(f"[create-user] erro ao enviar WA: {exc}")
+            threading.Thread(target=_enviar, daemon=True).start()
+            wa_sent = True
+        except Exception as exc:
+            print(f"[create-user] erro ao preparar WA: {exc}")
+
+    return jsonify({"ok": True, "uid": uid, "trial_expires_at": trial_exp, "wa_sent": wa_sent})
 
 @app.route("/change-password", methods=["GET", "POST"])
 @require_login

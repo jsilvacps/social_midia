@@ -539,7 +539,8 @@ async function saveNewUser() {
   const email    = document.getElementById("nu-email").value.trim();
   const name     = document.getElementById("nu-name").value.trim();
   const password = document.getElementById("nu-password").value.trim();
-  const phone    = document.getElementById("nu-phone").value.trim();
+  const phoneRaw = document.getElementById("nu-phone").value.replace(/\D/g, "");
+  const phone    = phoneRaw ? "55" + phoneRaw : "";
   const plan     = document.getElementById("nu-plan").value;
   const days     = parseInt(document.getElementById("nu-days").value) || 30;
 
@@ -684,8 +685,13 @@ document.getElementById("wa-modal").addEventListener("click", function(e) {
       </div>
       <div>
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">📱 WhatsApp do cliente <span style="color:#3b82f6">(envia boas-vindas automático)</span></label>
-        <input id="nu-phone" type="tel" placeholder="5511999998888 (com DDI e DDD)"
-               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <div style="background:#1e2d4a;padding:10px 12px;font-size:14px;color:#94a3b8;white-space:nowrap;display:flex;align-items:center;gap:6px;border-right:1px solid var(--border)">
+            🇧🇷 +55
+          </div>
+          <input id="nu-phone" type="tel" placeholder="(11) 99999-8888"
+                 style="flex:1;background:var(--bg);border:none;padding:10px 12px;color:var(--text);font-size:14px;outline:none">
+        </div>
       </div>
       <div>
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Email *</label>

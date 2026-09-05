@@ -135,6 +135,11 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN features TEXT DEFAULT '[]'")
     except Exception:
         pass
+    # Migration — users: troca de senha obrigatória no primeiro acesso
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -206,6 +211,11 @@ def require_login(f):
                     return redirect("/login?msg=trial_expired")
             except Exception:
                 pass
+        # Verifica se precisa trocar a senha (criado pelo admin)
+        if u.get("must_change_password") and request.path not in ("/change-password",):
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "Troca de senha obrigatória"}), 403
+            return redirect("/change-password")
         return f(*args, **kwargs)
     return wrapper
 
@@ -1030,7 +1040,7 @@ def api_admin_create_user():
     conn = db()
     try:
         conn.execute(
-            "INSERT INTO users (email, password_hash, name, plan, is_admin, trial_expires_at) VALUES (?,?,?,?,0,?)",
+            "INSERT INTO users (email, password_hash, name, plan, is_admin, trial_expires_at, must_change_password) VALUES (?,?,?,?,0,?,1)",
             (email, _hash_pw(password), name, plan, trial_exp)
         )
         conn.commit()
@@ -1040,6 +1050,27 @@ def api_admin_create_user():
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({"ok": False, "error": "Email já cadastrado"}), 400
+
+@app.route("/change-password", methods=["GET", "POST"])
+@require_login
+def change_password():
+    u = get_current_user()
+    error = ""
+    if request.method == "POST":
+        new_pw  = request.form.get("new_password", "").strip()
+        confirm = request.form.get("confirm", "").strip()
+        if len(new_pw) < 6:
+            error = "A senha deve ter ao menos 6 caracteres."
+        elif new_pw != confirm:
+            error = "As senhas não coincidem."
+        else:
+            conn = db()
+            conn.execute("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?",
+                         (_hash_pw(new_pw), u["id"]))
+            conn.commit()
+            conn.close()
+            return redirect("/")
+    return render_template("change_password.html", error=error, user_name=u.get("name") or u.get("email"))
 
 @app.route("/api/admin/stats")
 @require_admin

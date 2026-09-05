@@ -754,8 +754,17 @@ async function disconnectWa() {
   if (btn) { btn.disabled = true; btn.textContent = "⏳ Desconectando…"; }
   const r = await fetch(`/api/admin/users/${waUid}/wa-disconnect`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
   if (btn) { btn.disabled = false; btn.textContent = "🔌 Desconectar"; }
-  if (r.ok) { toast("✅ Instância desconectada!"); clearInterval(waPollTimer); waPollTimer = null; loadWaStatus(waUid); }
-  else toast("❌ " + (r.error || "Erro ao desconectar"));
+  if (r.ok) {
+    toast("✅ Instância removida!");
+    clearInterval(waPollTimer); waPollTimer = null;
+    // Força UI para "Sem instância" + mostra botão Criar
+    document.getElementById("wa-status-badge").textContent = "🔴 Sem instância";
+    document.getElementById("wa-status-badge").style.color = "var(--danger)";
+    var pb = document.getElementById("wa-phone-badge"); if(pb) pb.style.display="none";
+    var ch = document.getElementById("wa-connect-hint"); if(ch) ch.style.display="none";
+    var bc = document.getElementById("wa-btn-create"); if(bc) bc.style.display="inline-flex";
+    var bd = document.getElementById("wa-btn-disc");   if(bd) bd.style.display="none";
+  } else toast("❌ " + (r.error || "Erro ao desconectar"));
 }
 
 // Load grupos WA

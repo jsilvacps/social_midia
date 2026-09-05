@@ -1147,6 +1147,10 @@ def admin_wa_disconnect(uid):
     if not base or not instance:
         return jsonify({"ok": False, "error": "Sem instância"})
     try:
+        # 1. Logout do WhatsApp
+        requests.delete(f"{base}/instance/logout/{instance}",
+                        headers={"apikey": apikey}, timeout=10)
+        # 2. Deleta a instância
         requests.delete(f"{base}/instance/delete/{instance}",
                         headers={"apikey": apikey}, timeout=10)
         return jsonify({"ok": True})

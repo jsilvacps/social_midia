@@ -633,21 +633,17 @@ async function saveNewUser() {
 var waUid = null, waName = "", waPollTimer = null;
 
 function openWaModal(uid, name) {
-  try {
-    waUid = uid; waName = name;
-    var modal = document.getElementById("wa-modal");
-    if (!modal) { alert("ERRO: elemento #wa-modal não encontrado no DOM"); return; }
-    document.getElementById("wa-modal-title").textContent = `📱 WhatsApp — ${name}`;
-    document.getElementById("wa-qr-img").src = "";
-    document.getElementById("wa-qr-img").style.display = "none";
-    document.getElementById("wa-status-badge").textContent = "…";
-    document.getElementById("wa-status-badge").style.color = "var(--muted)";
-    modal.style.display = "flex";
-    clearInterval(waPollTimer);
-    loadWaStatus(uid);
-  } catch(err) {
-    alert("ERRO openWaModal: " + err.message + "\nLinha: " + (err.stack || "").split("\n")[1]);
-  }
+  waUid = uid; waName = name;
+  var modal = document.getElementById("wa-modal");
+  if (!modal) return;
+  document.getElementById("wa-modal-title").textContent = `📱 WhatsApp — ${name}`;
+  document.getElementById("wa-qr-img").src = "";
+  document.getElementById("wa-qr-img").style.display = "none";
+  document.getElementById("wa-status-badge").textContent = "…";
+  document.getElementById("wa-status-badge").style.color = "var(--muted)";
+  modal.style.display = "flex";
+  clearInterval(waPollTimer);
+  loadWaStatus(uid);
 }
 function closeWaModal() {
   document.getElementById("wa-modal").style.display = "none";

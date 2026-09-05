@@ -1078,6 +1078,10 @@ def api_admin_create_user():
                 f"3. Selecione *\"Adicionar à tela inicial\"*\n"
                 f"4. Pronto! O app fica salvo como ícone no seu celular 📱\n\n"
                 f"{trial_txt}\n\n"
+                f"🚧 *AVISO IMPORTANTE — Versão BETA:*\n"
+                f"O ZapShot está em fase de testes. Por ser BETA, sempre que houver uma atualização do sistema, "
+                f"*todas as configurações serão perdidas* (API, token, grupos e posts agendados) e precisarão ser refeitas. "
+                f"Agradecemos sua compreensão e paciência nessa fase! 🙏\n\n"
                 f"Qualquer dúvida, me chame aqui! 🚀"
             )
 

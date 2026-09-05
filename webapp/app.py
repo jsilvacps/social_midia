@@ -57,89 +57,225 @@ app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
 # ── Database ───────────────────────────────────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+USE_PG = bool(DATABASE_URL)
+
+if USE_PG:
+    import psycopg2
+    import psycopg2.extras
+
+class _PgWrapper:
+    """Wrapper que imita a interface sqlite3 para o restante do código."""
+    def __init__(self, pg_conn):
+        self._conn = pg_conn
+
+    def execute(self, sql, params=()):
+        sql = self._adapt(sql)
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return _CursorWrapper(cur)
+
+    def executemany(self, sql, seq):
+        sql = self._adapt(sql)
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq)
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def _adapt(self, sql):
+        # Converte ? → %s e sintaxe SQLite → PostgreSQL
+        sql = sql.replace("?", "%s")
+        sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+        sql = sql.replace("datetime('now')", "NOW()")
+        sql = sql.replace("INSERT OR REPLACE", "INSERT")
+        sql = sql.replace("INSERT OR IGNORE", "INSERT")
+        return sql
+
+class _CursorWrapper:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        if row is None:
+            return None
+        return _RowWrapper(row, self._cur.description)
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        if not rows:
+            return []
+        desc = self._cur.description
+        return [_RowWrapper(r, desc) for r in rows]
+
+    def __iter__(self):
+        desc = self._cur.description
+        for row in self._cur:
+            yield _RowWrapper(row, desc)
+
+    @property
+    def lastrowid(self):
+        self._cur.execute("SELECT LASTVAL()")
+        return self._cur.fetchone()[0]
+
+class _RowWrapper:
+    """Imita sqlite3.Row — acesso por nome ou índice."""
+    def __init__(self, row, description):
+        self._row  = row
+        self._cols = [d[0] for d in description] if description else []
+        self._map  = {d[0]: i for i, d in enumerate(description)} if description else {}
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._row[key]
+        return self._row[self._map[key]]
+
+    def get(self, key, default=None):
+        idx = self._map.get(key)
+        if idx is None:
+            return default
+        return self._row[idx]
+
+    def keys(self):
+        return self._cols
+
+    def __contains__(self, key):
+        return key in self._map
+
 def db():
+    if USE_PG:
+        conn = psycopg2.connect(DATABASE_URL)
+        return _PgWrapper(conn)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+def _col_exists(conn, table, col):
+    if USE_PG:
+        r = conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name=%s AND column_name=%s",
+            (table, col)
+        ).fetchone()
+        return r is not None
+    try:
+        conn.execute(f"SELECT {col} FROM {table} LIMIT 1")
+        return True
+    except Exception:
+        return False
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    # Tabela de usuários
-    conn.execute("""CREATE TABLE IF NOT EXISTS users (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        email           TEXT    UNIQUE NOT NULL,
-        password_hash   TEXT    NOT NULL,
-        name            TEXT    DEFAULT '',
-        plan            TEXT    DEFAULT 'trial',
-        is_admin        INTEGER DEFAULT 0,
-        created_at      TEXT    DEFAULT (datetime('now')),
-        trial_expires_at TEXT   DEFAULT NULL
-    )""")
-    # migration: adiciona coluna se não existir
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN trial_expires_at TEXT DEFAULT NULL")
-        conn.commit()
-    except Exception:
-        pass
-    # Config por usuário
-    conn.execute("""CREATE TABLE IF NOT EXISTS user_configs (
-        user_id     INTEGER PRIMARY KEY,
-        config_json TEXT    DEFAULT '{}'
-    )""")
-    # Posts
-    conn.execute("""CREATE TABLE IF NOT EXISTS posts (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id      INTEGER DEFAULT 0,
-        caption      TEXT    DEFAULT '',
-        filename     TEXT    DEFAULT '',
-        media_type   TEXT    DEFAULT 'image',
-        wa_groups    TEXT    DEFAULT '[]',
-        ig_feed      INTEGER DEFAULT 0,
-        ig_stories   INTEGER DEFAULT 0,
-        ig_reels     INTEGER DEFAULT 0,
-        wa_status    INTEGER DEFAULT 0,
-        scheduled_at TEXT,
-        status       TEXT    DEFAULT 'pending',
-        created_at   TEXT,
-        sent_at      TEXT,
-        result       TEXT    DEFAULT '{}',
-        batch_id     TEXT    DEFAULT '',
-        batch_title  TEXT    DEFAULT ''
-    )""")
-    # Grupos importados do WhatsApp dos usuários
-    conn.execute("""CREATE TABLE IF NOT EXISTS wa_imported_groups (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id     INTEGER NOT NULL,
-        group_jid   TEXT    NOT NULL,
-        name        TEXT    DEFAULT '',
-        invite_link TEXT    DEFAULT '',
-        imported_at TEXT    DEFAULT (datetime('now')),
-        UNIQUE(user_id, group_jid)
-    )""")
-    # Migrations — posts
-    for col, defval in [
-        ("batch_id",      "''"),
-        ("batch_title",   "''"),
-        ("wa_status",     "0"),
-        ("user_id",       "0"),
-        ("client_phone",  "''"),
-        ("suspend_from",  "''"),
-        ("suspend_to",    "''"),
-    ]:
-        try:
-            conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
-        except Exception:
-            pass
-    # Migration — users: coluna features (JSON array de strings)
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN features TEXT DEFAULT '[]'")
-    except Exception:
-        pass
-    # Migration — users: troca de senha obrigatória no primeiro acesso
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    conn = db()
+    if USE_PG:
+        conn.execute("""CREATE TABLE IF NOT EXISTS users (
+            id               SERIAL PRIMARY KEY,
+            email            TEXT   UNIQUE NOT NULL,
+            password_hash    TEXT   NOT NULL,
+            name             TEXT   DEFAULT '',
+            plan             TEXT   DEFAULT 'trial',
+            is_admin         INTEGER DEFAULT 0,
+            created_at       TEXT   DEFAULT TO_CHAR(NOW(),'YYYY-MM-DD"T"HH24:MI:SS'),
+            trial_expires_at TEXT   DEFAULT NULL,
+            features         TEXT   DEFAULT '[]',
+            must_change_password INTEGER DEFAULT 0
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_configs (
+            user_id     INTEGER PRIMARY KEY,
+            config_json TEXT    DEFAULT '{}'
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS posts (
+            id           SERIAL PRIMARY KEY,
+            user_id      INTEGER DEFAULT 0,
+            caption      TEXT    DEFAULT '',
+            filename     TEXT    DEFAULT '',
+            media_type   TEXT    DEFAULT 'image',
+            wa_groups    TEXT    DEFAULT '[]',
+            ig_feed      INTEGER DEFAULT 0,
+            ig_stories   INTEGER DEFAULT 0,
+            ig_reels     INTEGER DEFAULT 0,
+            wa_status    INTEGER DEFAULT 0,
+            scheduled_at TEXT,
+            status       TEXT    DEFAULT 'pending',
+            created_at   TEXT,
+            sent_at      TEXT,
+            result       TEXT    DEFAULT '{}',
+            batch_id     TEXT    DEFAULT '',
+            batch_title  TEXT    DEFAULT '',
+            client_phone TEXT    DEFAULT '',
+            suspend_from TEXT    DEFAULT '',
+            suspend_to   TEXT    DEFAULT ''
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS wa_imported_groups (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER NOT NULL,
+            group_jid   TEXT    NOT NULL,
+            name        TEXT    DEFAULT '',
+            invite_link TEXT    DEFAULT '',
+            imported_at TEXT    DEFAULT TO_CHAR(NOW(),'YYYY-MM-DD"T"HH24:MI:SS'),
+            UNIQUE(user_id, group_jid)
+        )""")
+    else:
+        conn.execute("""CREATE TABLE IF NOT EXISTS users (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            email           TEXT    UNIQUE NOT NULL,
+            password_hash   TEXT    NOT NULL,
+            name            TEXT    DEFAULT '',
+            plan            TEXT    DEFAULT 'trial',
+            is_admin        INTEGER DEFAULT 0,
+            created_at      TEXT    DEFAULT (datetime('now')),
+            trial_expires_at TEXT   DEFAULT NULL
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS user_configs (
+            user_id     INTEGER PRIMARY KEY,
+            config_json TEXT    DEFAULT '{}'
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS posts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER DEFAULT 0,
+            caption      TEXT    DEFAULT '',
+            filename     TEXT    DEFAULT '',
+            media_type   TEXT    DEFAULT 'image',
+            wa_groups    TEXT    DEFAULT '[]',
+            ig_feed      INTEGER DEFAULT 0,
+            ig_stories   INTEGER DEFAULT 0,
+            ig_reels     INTEGER DEFAULT 0,
+            wa_status    INTEGER DEFAULT 0,
+            scheduled_at TEXT,
+            status       TEXT    DEFAULT 'pending',
+            created_at   TEXT,
+            sent_at      TEXT,
+            result       TEXT    DEFAULT '{}',
+            batch_id     TEXT    DEFAULT '',
+            batch_title  TEXT    DEFAULT ''
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS wa_imported_groups (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            group_jid   TEXT    NOT NULL,
+            name        TEXT    DEFAULT '',
+            invite_link TEXT    DEFAULT '',
+            imported_at TEXT    DEFAULT (datetime('now')),
+            UNIQUE(user_id, group_jid)
+        )""")
+        # Migrations SQLite
+        for col, defval in [
+            ("batch_id","''"),("batch_title","''"),("wa_status","0"),
+            ("user_id","0"),("client_phone","''"),("suspend_from","''"),("suspend_to","''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
+            except Exception:
+                pass
+        for col, defval in [
+            ("trial_expires_at","NULL"),("features","'[]'"),("must_change_password","0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {defval}")
+            except Exception:
+                pass
     conn.commit()
     conn.close()
 
@@ -788,7 +924,7 @@ def register():
             (email, _hash_pw(password), name, "trial" if not is_admin else "active", is_admin, trial_exp)
         )
         conn.commit()
-    except sqlite3.IntegrityError:
+    except Exception as _ie:
         conn.close()
         return render_template("login.html", error="Este email já está cadastrado.", tab="register")
     user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
@@ -972,8 +1108,14 @@ def admin_wa_disconnect(uid):
 
 def save_config(uid, cfg_dict):
     conn = db()
-    conn.execute("INSERT OR REPLACE INTO user_configs (user_id, config_json) VALUES (?,?)",
-                 (uid, json.dumps(cfg_dict, ensure_ascii=False)))
+    data = json.dumps(cfg_dict, ensure_ascii=False)
+    if USE_PG:
+        conn.execute("""INSERT INTO user_configs (user_id, config_json) VALUES (%s,%s)
+                        ON CONFLICT (user_id) DO UPDATE SET config_json=EXCLUDED.config_json""",
+                     (uid, data))
+    else:
+        conn.execute("INSERT OR REPLACE INTO user_configs (user_id, config_json) VALUES (?,?)",
+                     (uid, data))
     conn.commit()
     conn.close()
 
@@ -1052,7 +1194,7 @@ def api_admin_create_user():
         if phone:
             save_config(uid, {"welcome_phone": phone, "welcome_password": password,
                               "welcome_name": name or email.split("@")[0]})
-    except sqlite3.IntegrityError:
+    except Exception as _ie:
         conn.close()
         return jsonify({"ok": False, "error": "Email já cadastrado"}), 400
 
@@ -1423,10 +1565,16 @@ def _salvar_grupos_silencioso(cfg, uid, groups):
                     (name, new_link, uid, jid)
                 )
             else:
-                conn.execute(
-                    "INSERT OR IGNORE INTO wa_imported_groups (user_id, group_jid, name, invite_link) VALUES (?,?,?,?)",
-                    (uid, jid, name, link)
-                )
+                if USE_PG:
+                    conn.execute(
+                        "INSERT INTO wa_imported_groups (user_id, group_jid, name, invite_link) VALUES (%s,%s,%s,%s) ON CONFLICT (user_id, group_jid) DO NOTHING",
+                        (uid, jid, name, link)
+                    )
+                else:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO wa_imported_groups (user_id, group_jid, name, invite_link) VALUES (?,?,?,?)",
+                        (uid, jid, name, link)
+                    )
         conn.commit()
         print(f"[grupos_silencioso] uid={uid} grupos={len(groups)} com_link={sum(1 for l in links if l)}")
     except Exception as e:

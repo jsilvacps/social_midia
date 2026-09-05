@@ -860,11 +860,118 @@ def admin_toggle_admin(uid):
     conn.close()
     return redirect("/admin")
 
+# ── WA Instance Management (admin cria instância para o cliente) ───────────────
+def _admin_evo_cfg():
+    """Retorna config do admin (EVO URL + chave global) para gerenciar instâncias."""
+    admin = db().execute("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1").fetchone()
+    if not admin:
+        return None
+    return load_config(user_id=admin["id"])
+
+@app.route("/api/admin/users/<int:uid>/wa-instance", methods=["POST"])
+@require_admin
+def admin_create_wa_instance(uid):
+    """Cria uma instância WA para o cliente no servidor Evolution API do admin."""
+    cfg = _admin_evo_cfg()
+    if not cfg or not cfg.get("evo_url"):
+        return jsonify({"ok": False, "error": "Configure o Evolution API no seu perfil admin primeiro."})
+    base   = cfg["evo_url"].rstrip("/")
+    apikey = cfg.get("evo_token", "")
+    instance_name = f"zapshot_u{uid}"
+    headers = {"apikey": apikey, "Content-Type": "application/json"}
+    try:
+        # Cria instância
+        r = requests.post(f"{base}/instance/create", headers=headers, json={
+            "instanceName": instance_name,
+            "integration": "WHATSAPP-BAILEYS",
+            "qrcode": True,
+        }, timeout=15)
+        data = r.json()
+        print(f"[wa-instance] create uid={uid}: {r.status_code} {data}")
+        if r.status_code not in (200, 201):
+            return jsonify({"ok": False, "error": data.get("message", str(data))})
+        # Salva na config do cliente automaticamente
+        user_cfg = load_config(user_id=uid)
+        user_cfg["evo_url"]      = base
+        user_cfg["evo_token"]    = apikey
+        user_cfg["evo_instance"] = instance_name
+        user_cfg["app_url"]      = cfg.get("app_url", "https://social-midia.onrender.com")
+        save_config(uid, user_cfg)
+        return jsonify({"ok": True, "instance": instance_name})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+@app.route("/api/admin/users/<int:uid>/wa-qr")
+@require_admin
+def admin_wa_qr(uid):
+    """Retorna QR Code base64 para o cliente escanear."""
+    cfg = load_config(user_id=uid)
+    base     = (cfg.get("evo_url") or "").rstrip("/")
+    apikey   = cfg.get("evo_token", "")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return jsonify({"ok": False, "error": "Instância não configurada"})
+    try:
+        r = requests.get(f"{base}/instance/connect/{instance}",
+                         headers={"apikey": apikey}, timeout=15)
+        data = r.json()
+        print(f"[wa-qr] uid={uid}: {r.status_code} keys={list(data.keys())}")
+        # QR pode vir em vários formatos conforme versão do Evolution
+        qr = (data.get("qrcode") or {}).get("base64") or data.get("base64") or data.get("qr") or ""
+        if not qr and "code" in data:
+            qr = data["code"]
+        return jsonify({"ok": True, "qr": qr, "raw": data})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+@app.route("/api/admin/users/<int:uid>/wa-status")
+@require_admin
+def admin_wa_status(uid):
+    """Retorna estado da conexão WA do cliente."""
+    cfg = load_config(user_id=uid)
+    base     = (cfg.get("evo_url") or "").rstrip("/")
+    apikey   = cfg.get("evo_token", "")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return jsonify({"ok": True, "state": "not_configured"})
+    try:
+        r = requests.get(f"{base}/instance/connectionState/{instance}",
+                         headers={"apikey": apikey}, timeout=10)
+        data = r.json()
+        state = (data.get("instance") or {}).get("state") or data.get("state") or "unknown"
+        return jsonify({"ok": True, "state": state, "instance": instance})
+    except Exception as exc:
+        return jsonify({"ok": True, "state": "error", "error": str(exc)})
+
+@app.route("/api/admin/users/<int:uid>/wa-disconnect", methods=["POST"])
+@require_admin
+def admin_wa_disconnect(uid):
+    """Desconecta e deleta a instância WA do cliente."""
+    cfg = load_config(user_id=uid)
+    base     = (cfg.get("evo_url") or "").rstrip("/")
+    apikey   = cfg.get("evo_token", "")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return jsonify({"ok": False, "error": "Sem instância"})
+    try:
+        requests.delete(f"{base}/instance/delete/{instance}",
+                        headers={"apikey": apikey}, timeout=10)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+def save_config(uid, cfg_dict):
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO user_configs (user_id, config_json) VALUES (?,?)",
+                 (uid, json.dumps(cfg_dict, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+
 @app.route("/admin/users/<int:uid>/feature/<feat>", methods=["POST"])
 @require_admin
 def admin_toggle_feature(uid, feat):
     """Ativa ou desativa uma feature para um usuário."""
-    ALLOWED_FEATURES = {"grupos"}
+    ALLOWED_FEATURES = {"grupos", "instagram", "wa_status", "relatorio"}
     if feat not in ALLOWED_FEATURES:
         return jsonify({"ok": False, "error": "Feature inválida"}), 400
     conn = db()
@@ -900,6 +1007,39 @@ def admin_delete_user(uid):
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
+
+@app.route("/api/admin/create-user", methods=["POST"])
+@require_admin
+def api_admin_create_user():
+    """Admin cria usuário diretamente sem passar pela tela de registro."""
+    data     = request.get_json(force=True) or {}
+    email    = (data.get("email", "") or "").strip().lower()
+    name     = (data.get("name",  "") or "").strip()
+    password = (data.get("password", "") or "").strip()
+    plan     = data.get("plan", "trial")
+    days     = int(data.get("trial_days", 3))
+
+    if not email or not password:
+        return jsonify({"ok": False, "error": "Email e senha são obrigatórios"}), 400
+    if len(password) < 6:
+        return jsonify({"ok": False, "error": "Senha deve ter ao menos 6 caracteres"}), 400
+
+    from datetime import datetime as _dt, timedelta as _td
+    trial_exp = (_dt.utcnow() + _td(days=days)).strftime("%Y-%m-%dT%H:%M:%S") if plan == "trial" else None
+
+    conn = db()
+    try:
+        conn.execute(
+            "INSERT INTO users (email, password_hash, name, plan, is_admin, trial_expires_at) VALUES (?,?,?,?,0,?)",
+            (email, _hash_pw(password), name, plan, trial_exp)
+        )
+        conn.commit()
+        user = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "uid": user["id"], "trial_expires_at": trial_exp})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"ok": False, "error": "Email já cadastrado"}), 400
 
 @app.route("/api/admin/stats")
 @require_admin

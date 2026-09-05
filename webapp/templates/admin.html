@@ -180,7 +180,12 @@
   </div>
 
   <!-- Users table -->
-  <div class="section-title">👥 Usuários cadastrados</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+    <div class="section-title" style="margin-bottom:0">👥 Usuários cadastrados</div>
+    <button class="btn btn-success btn-sm" onclick="openNewUserModal()" style="font-size:13px">
+      ➕ Criar usuário
+    </button>
+  </div>
   <div class="table-wrap">
     <table>
       <thead>
@@ -509,6 +514,52 @@ function copiarTodos() {
   } catch(e) {}
 })();
 
+// ── Criar Usuário ────────────────────────────────────────────────────────────
+function openNewUserModal() {
+  document.getElementById("nu-name").value = "";
+  document.getElementById("nu-email").value = "";
+  document.getElementById("nu-password").value = "";
+  document.getElementById("nu-plan").value = "trial";
+  document.getElementById("nu-days").value = "30";
+  document.getElementById("new-user-modal").style.display = "flex";
+}
+function closeNewUserModal() {
+  document.getElementById("new-user-modal").style.display = "none";
+}
+function nuPlanChange(sel) {
+  document.getElementById("nu-days-wrap").style.display = sel.value === "trial" ? "" : "none";
+}
+document.getElementById("new-user-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeNewUserModal();
+});
+async function saveNewUser() {
+  const btn = document.getElementById("nu-btn-save");
+  const email    = document.getElementById("nu-email").value.trim();
+  const name     = document.getElementById("nu-name").value.trim();
+  const password = document.getElementById("nu-password").value.trim();
+  const plan     = document.getElementById("nu-plan").value;
+  const days     = parseInt(document.getElementById("nu-days").value) || 30;
+
+  if (!email || !password) { toast("❌ Email e senha são obrigatórios"); return; }
+  btn.disabled = true; btn.textContent = "Criando…";
+
+  const r = await fetch("/api/admin/create-user", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({email, name, password, plan, trial_days: days})
+  }).then(r=>r.json()).catch(()=>({ok:false, error:"Erro de rede"}));
+
+  btn.disabled = false; btn.textContent = "✅ Criar usuário";
+
+  if (r.ok) {
+    toast(`✅ Usuário ${email} criado! Trial: ${days} dias`);
+    closeNewUserModal();
+    setTimeout(() => location.reload(), 1200);
+  } else {
+    toast("❌ " + (r.error || "Erro ao criar usuário"));
+  }
+}
+
 // ── WA Instance / QR Modal ──────────────────────────────────────────────────
 let waUid = null, waName = "", waPollTimer = null;
 
@@ -612,6 +663,54 @@ document.getElementById("wa-modal").addEventListener("click", function(e) {
   } catch(e) {}
 })();
 </script>
+
+<!-- Modal Criar Usuário -->
+<div id="new-user-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;width:400px;max-width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <span style="font-weight:700;font-size:16px">➕ Criar novo usuário</span>
+      <button onclick="closeNewUserModal()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1">×</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Nome</label>
+        <input id="nu-name" type="text" placeholder="Ex: João Silva"
+               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Email *</label>
+        <input id="nu-email" type="email" placeholder="cliente@email.com"
+               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Senha *</label>
+        <input id="nu-password" type="text" placeholder="Mínimo 6 caracteres"
+               style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+      </div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Plano</label>
+          <select id="nu-plan" onchange="nuPlanChange(this)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+            <option value="trial">🟡 Trial</option>
+            <option value="active">🟢 Ativo</option>
+            <option value="inactive">🔴 Inativo</option>
+          </select>
+        </div>
+        <div style="flex:1" id="nu-days-wrap">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Dias de trial</label>
+          <input id="nu-days" type="number" value="30" min="1" max="365"
+                 style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px">
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeNewUserModal()" class="btn btn-ghost btn-sm">Cancelar</button>
+      <button id="nu-btn-save" onclick="saveNewUser()" class="btn btn-success btn-sm">✅ Criar usuário</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal WA QR Code -->
 <div id="wa-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;align-items:center;justify-content:center">

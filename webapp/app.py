@@ -1118,7 +1118,21 @@ def admin_wa_status(uid):
                          headers={"apikey": apikey}, timeout=10)
         data = r.json()
         state = (data.get("instance") or {}).get("state") or data.get("state") or "unknown"
-        return jsonify({"ok": True, "state": state, "instance": instance})
+        # Tenta buscar número conectado
+        phone = ""
+        try:
+            ri = requests.get(f"{base}/instance/fetchInstances",
+                              headers={"apikey": apikey}, timeout=8)
+            instances = ri.json() if ri.status_code == 200 else []
+            if isinstance(instances, list):
+                for inst in instances:
+                    if inst.get("name") == instance or inst.get("instanceName") == instance:
+                        owner = inst.get("ownerJid") or inst.get("owner") or ""
+                        phone = owner.split("@")[0] if owner else ""
+                        break
+        except Exception:
+            pass
+        return jsonify({"ok": True, "state": state, "instance": instance, "phone": phone})
     except Exception as exc:
         return jsonify({"ok": True, "state": "error", "error": str(exc)})
 

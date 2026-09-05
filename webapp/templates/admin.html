@@ -271,6 +271,7 @@
               {% endif %}
               <button class="btn btn-ghost btn-sm" onclick="openConfig({{ u.id }}, '{{ u.name or u.email }}')">⚙️ Config</button>
               <button class="btn btn-ghost btn-sm" onclick="openWaModal({{ u.id }}, '{{ u.name or u.email }}')">📱 WA</button>
+              <button class="btn btn-ghost btn-sm" onclick="openSendWelcome({{ u.id }}, '{{ u.name or u.email }}')" title="Reenviar boas-vindas no WhatsApp">📨 Boas-vindas</button>
               {% if u.id != current_user.id %}
               <button class="btn btn-danger btn-sm" onclick="deleteUser({{ u.id }}, '{{ u.email }}')">🗑️</button>
               {% endif %}
@@ -514,6 +515,36 @@ function copiarTodos() {
   } catch(e) {}
 })();
 
+// ── Reenviar Boas-vindas ─────────────────────────────────────────────────────
+let welcomeUid = null;
+function openSendWelcome(uid, name) {
+  welcomeUid = uid;
+  document.getElementById("welcome-modal-title").textContent = `📨 Boas-vindas — ${name}`;
+  document.getElementById("wm-phone").value = "";
+  document.getElementById("welcome-modal").style.display = "flex";
+}
+function closeWelcomeModal() {
+  document.getElementById("welcome-modal").style.display = "none";
+  welcomeUid = null;
+}
+document.getElementById("welcome-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeWelcomeModal();
+});
+async function sendWelcome() {
+  const phoneRaw = document.getElementById("wm-phone").value.replace(/\D/g,"");
+  const phone = phoneRaw ? "55" + phoneRaw : "";
+  const btn = document.getElementById("wm-btn-send");
+  btn.disabled = true; btn.textContent = "Enviando…";
+  const r = await fetch(`/api/admin/users/${welcomeUid}/send-welcome`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({phone})
+  }).then(r=>r.json()).catch(()=>({ok:false,error:"Erro de rede"}));
+  btn.disabled = false; btn.textContent = "📨 Enviar agora";
+  if (r.ok) { toast(`✅ Boas-vindas enviado para +${r.phone}!`); closeWelcomeModal(); }
+  else toast("❌ " + (r.error || "Erro ao enviar"));
+}
+
 // ── Criar Usuário ────────────────────────────────────────────────────────────
 function openNewUserModal() {
   document.getElementById("nu-name").value = "";
@@ -668,6 +699,28 @@ document.getElementById("wa-modal").addEventListener("click", function(e) {
   } catch(e) {}
 })();
 </script>
+
+<!-- Modal Reenviar Boas-vindas -->
+<div id="welcome-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;width:380px;max-width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <span id="welcome-modal-title" style="font-weight:700;font-size:16px">📨 Reenviar boas-vindas</span>
+      <button onclick="closeWelcomeModal()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px">×</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Informe o WhatsApp do cliente para enviar as instruções de acesso:</p>
+    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px">
+      <div style="background:#1e2d4a;padding:10px 12px;font-size:14px;color:#94a3b8;white-space:nowrap;display:flex;align-items:center;gap:6px;border-right:1px solid var(--border)">
+        🇧🇷 +55
+      </div>
+      <input id="wm-phone" type="tel" placeholder="(11) 99999-8888"
+             style="flex:1;background:var(--bg);border:none;padding:10px 12px;color:var(--text);font-size:14px;outline:none">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeWelcomeModal()" class="btn btn-ghost btn-sm">Cancelar</button>
+      <button id="wm-btn-send" onclick="sendWelcome()" class="btn btn-success btn-sm">📨 Enviar agora</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal Criar Usuário -->
 <div id="new-user-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;align-items:center;justify-content:center">

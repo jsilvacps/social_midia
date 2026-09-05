@@ -1048,6 +1048,10 @@ def api_admin_create_user():
         user = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
         uid  = user["id"]
         conn.close()
+        # Salva phone e senha temp no config do cliente para reenvio futuro
+        if phone:
+            save_config(uid, {"welcome_phone": phone, "welcome_password": password,
+                              "welcome_name": name or email.split("@")[0]})
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({"ok": False, "error": "Email já cadastrado"}), 400
@@ -1103,6 +1107,76 @@ def api_admin_create_user():
             print(f"[create-user] erro ao preparar WA: {exc}")
 
     return jsonify({"ok": True, "uid": uid, "trial_expires_at": trial_exp, "wa_sent": wa_sent})
+
+@app.route("/api/admin/users/<int:uid>/send-welcome", methods=["POST"])
+@require_admin
+def api_admin_send_welcome(uid):
+    """Reenvia mensagem de boas-vindas WA para o cliente."""
+    data  = request.get_json(force=True) or {}
+    phone = (data.get("phone", "") or "").strip().replace(" ","").replace("-","").replace("(","").replace(")","")
+
+    conn = db()
+    user = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    if not user:
+        return jsonify({"ok": False, "error": "Usuário não encontrado"}), 404
+
+    # Tenta pegar phone salvo no config se não foi passado
+    if not phone:
+        cfg = load_config(user_id=uid)
+        phone = cfg.get("welcome_phone", "")
+    if not phone:
+        return jsonify({"ok": False, "error": "Nenhum telefone cadastrado para este usuário"}), 400
+
+    cfg = load_config(user_id=uid)
+    nome_cli = cfg.get("welcome_name") or user["name"] or user["email"].split("@")[0]
+    password = cfg.get("welcome_password", "****")
+    email    = user["email"]
+    plan     = user["plan"]
+
+    admin_cfg = _admin_evo_cfg() or {}
+    evo_url   = (admin_cfg.get("evo_url") or "").rstrip("/")
+    evo_tok   = admin_cfg.get("evo_token", "")
+    instance  = admin_cfg.get("evo_instance", "")
+    app_url   = admin_cfg.get("app_url") or "https://social-midia.onrender.com"
+    days      = 30
+
+    if not evo_url or not instance:
+        return jsonify({"ok": False, "error": "EVO API não configurada no admin"}), 400
+
+    trial_txt = f"Seu acesso é válido por *{days} dias* de teste gratuito." if plan == "trial" else "Seu acesso está ativo."
+
+    msg = (
+        f"👋 Olá, *{nome_cli}*! Seja bem-vindo(a) ao *⚡ ZapShot*!\n\n"
+        f"Sua conta foi criada com sucesso. Aqui estão seus dados de acesso:\n\n"
+        f"🔗 *Link do app:* {app_url.rstrip('/')}/login\n"
+        f"📧 *Email:* {email}\n"
+        f"🔑 *Senha temporária:* {password}\n\n"
+        f"⚠️ No primeiro acesso você será solicitado a criar uma senha pessoal.\n\n"
+        f"📲 *Como instalar no celular:*\n"
+        f"1. Abra o link acima no navegador (Chrome ou Safari)\n"
+        f"2. Toque no menu do navegador ⋮\n"
+        f"3. Selecione *\"Adicionar à tela inicial\"*\n"
+        f"4. Pronto! O app fica salvo como ícone no seu celular 📱\n\n"
+        f"{trial_txt}\n\n"
+        f"🚧 *AVISO IMPORTANTE — Versão BETA:*\n"
+        f"O ZapShot está em fase de testes. Por ser BETA, sempre que houver uma atualização do sistema, "
+        f"*todas as configurações serão perdidas* (API, token, grupos e posts agendados) e precisarão ser refeitas. "
+        f"Agradecemos sua compreensão e paciência nessa fase! 🙏\n\n"
+        f"Qualquer dúvida, me chame aqui! 🚀"
+    )
+    try:
+        import requests as _req
+        r = _req.post(
+            f"{evo_url}/message/sendText/{instance}",
+            headers={"apikey": evo_tok, "Content-Type": "application/json"},
+            json={"number": phone, "text": msg},
+            timeout=15
+        )
+        print(f"[send-welcome] {r.status_code} para {phone}")
+        return jsonify({"ok": True, "phone": phone})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 @app.route("/change-password", methods=["GET", "POST"])
 @require_login

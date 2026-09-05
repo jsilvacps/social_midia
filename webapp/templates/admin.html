@@ -750,12 +750,11 @@ async function loadWaQr(uid) {
 }
 
 async function disconnectWa() {
-  if (!confirm(`Desconectar e excluir instância WA de ${waName}?`)) return;
   const btn = document.getElementById("wa-btn-disc");
-  btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Desconectando…"; }
   const r = await fetch(`/api/admin/users/${waUid}/wa-disconnect`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
-  btn.disabled = false;
-  if (r.ok) { toast("✅ Instância desconectada"); loadWaStatus(waUid); }
+  if (btn) { btn.disabled = false; btn.textContent = "🔌 Desconectar"; }
+  if (r.ok) { toast("✅ Instância desconectada!"); clearInterval(waPollTimer); waPollTimer = null; loadWaStatus(waUid); }
   else toast("❌ " + (r.error || "Erro ao desconectar"));
 }
 

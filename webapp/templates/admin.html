@@ -265,6 +265,7 @@
               </form>
               {% endif %}
               <button class="btn btn-ghost btn-sm" onclick="openConfig({{ u.id }}, '{{ u.name or u.email }}')">⚙️ Config</button>
+              <button class="btn btn-ghost btn-sm" onclick="openWaModal({{ u.id }}, '{{ u.name or u.email }}')">📱 WA</button>
               {% if u.id != current_user.id %}
               <button class="btn btn-danger btn-sm" onclick="deleteUser({{ u.id }}, '{{ u.email }}')">🗑️</button>
               {% endif %}
@@ -508,6 +509,100 @@ function copiarTodos() {
   } catch(e) {}
 })();
 
+// ── WA Instance / QR Modal ──────────────────────────────────────────────────
+let waUid = null, waName = "", waPollTimer = null;
+
+function openWaModal(uid, name) {
+  waUid = uid; waName = name;
+  document.getElementById("wa-modal-title").textContent = `📱 WhatsApp — ${name}`;
+  document.getElementById("wa-qr-img").src = "";
+  document.getElementById("wa-qr-img").style.display = "none";
+  document.getElementById("wa-status-badge").textContent = "…";
+  document.getElementById("wa-status-badge").style.color = "var(--muted)";
+  document.getElementById("wa-modal").style.display = "flex";
+  clearInterval(waPollTimer);
+  loadWaStatus(uid);
+}
+function closeWaModal() {
+  document.getElementById("wa-modal").style.display = "none";
+  clearInterval(waPollTimer);
+  waPollTimer = null; waUid = null;
+}
+
+async function loadWaStatus(uid) {
+  const r = await fetch(`/api/admin/users/${uid}/wa-status`).then(r=>r.json()).catch(()=>({ok:false}));
+  const badge = document.getElementById("wa-status-badge");
+  const qrImg = document.getElementById("wa-qr-img");
+  const btnCreate = document.getElementById("wa-btn-create");
+  const btnDisc   = document.getElementById("wa-btn-disc");
+  const btnQr     = document.getElementById("wa-btn-qr");
+
+  if (!r.ok) {
+    // Instância ainda não existe
+    badge.textContent = "🔴 Sem instância";
+    badge.style.color = "var(--danger)";
+    qrImg.style.display = "none";
+    btnCreate.style.display = "inline-flex";
+    btnDisc.style.display   = "none";
+    btnQr.style.display     = "none";
+    clearInterval(waPollTimer);
+  } else {
+    const st = (r.state || "").toLowerCase();
+    if (st === "open" || st === "connected") {
+      badge.textContent = "🟢 Conectado";
+      badge.style.color = "var(--green)";
+      qrImg.style.display = "none";
+      btnCreate.style.display = "none";
+      btnDisc.style.display   = "inline-flex";
+      btnQr.style.display     = "none";
+      clearInterval(waPollTimer);
+    } else {
+      badge.textContent = "🟡 Aguardando QR";
+      badge.style.color = "var(--warning)";
+      btnCreate.style.display = "none";
+      btnDisc.style.display   = "inline-flex";
+      btnQr.style.display     = "inline-flex";
+      loadWaQr(uid);
+      // polling a cada 4s
+      if (!waPollTimer) {
+        waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 4000);
+      }
+    }
+  }
+}
+
+async function createWaInstance() {
+  const btn = document.getElementById("wa-btn-create");
+  btn.disabled = true; btn.textContent = "Criando…";
+  const r = await fetch(`/api/admin/users/${waUid}/wa-instance`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
+  btn.disabled = false; btn.textContent = "➕ Criar Instância";
+  if (r.ok) { toast("✅ Instância criada! Carregando QR…"); loadWaStatus(waUid); }
+  else toast("❌ " + (r.error || "Erro ao criar instância"));
+}
+
+async function loadWaQr(uid) {
+  const r = await fetch(`/api/admin/users/${uid}/wa-qr`).then(r=>r.json()).catch(()=>({ok:false}));
+  const qrImg = document.getElementById("wa-qr-img");
+  if (r.ok && r.qr_base64) {
+    qrImg.src = "data:image/png;base64," + r.qr_base64;
+    qrImg.style.display = "block";
+  }
+}
+
+async function disconnectWa() {
+  if (!confirm(`Desconectar e excluir instância WA de ${waName}?`)) return;
+  const btn = document.getElementById("wa-btn-disc");
+  btn.disabled = true;
+  const r = await fetch(`/api/admin/users/${waUid}/wa-disconnect`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
+  btn.disabled = false;
+  if (r.ok) { toast("✅ Instância desconectada"); loadWaStatus(waUid); }
+  else toast("❌ " + (r.error || "Erro ao desconectar"));
+}
+
+document.getElementById("wa-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeWaModal();
+});
+
 // Load grupos WA
 (async () => {
   try {
@@ -517,5 +612,39 @@ function copiarTodos() {
   } catch(e) {}
 })();
 </script>
+
+<!-- Modal WA QR Code -->
+<div id="wa-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;width:360px;max-width:95vw;text-align:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <span id="wa-modal-title" style="font-weight:700;font-size:16px">📱 WhatsApp</span>
+      <button onclick="closeWaModal()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1">×</button>
+    </div>
+
+    <div id="wa-status-badge" style="font-size:14px;margin-bottom:16px;font-weight:600">…</div>
+
+    <img id="wa-qr-img" src="" alt="QR Code"
+         style="display:none;width:220px;height:220px;border-radius:12px;border:4px solid var(--border);margin:0 auto 16px;object-fit:contain;background:#fff">
+
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">
+      Abra o WhatsApp → Aparelhos conectados → Conectar aparelho → aponte para o QR
+    </p>
+
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button id="wa-btn-create" onclick="createWaInstance()"
+              class="btn btn-success btn-sm" style="display:none">
+        ➕ Criar Instância
+      </button>
+      <button id="wa-btn-qr" onclick="loadWaQr(waUid)"
+              class="btn btn-ghost btn-sm" style="display:none">
+        🔄 Atualizar QR
+      </button>
+      <button id="wa-btn-disc" onclick="disconnectWa()"
+              class="btn btn-danger btn-sm" style="display:none">
+        🔌 Desconectar
+      </button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

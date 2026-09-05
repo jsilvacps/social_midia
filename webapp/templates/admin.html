@@ -757,10 +757,6 @@ async function disconnectWa() {
   else toast("❌ " + (r.error || "Erro ao desconectar"));
 }
 
-document.getElementById("wa-modal").addEventListener("click", function(e) {
-  if (e.target === this) closeWaModal();
-});
-
 // Load grupos WA
 (async () => {
   try {
@@ -910,5 +906,11 @@ document.getElementById("wa-modal").addEventListener("click", function(e) {
     </div>
   </div>
 </div>
+<script>
+  // fechar modal clicando fora — precisa estar após o DOM existir
+  document.getElementById("wa-modal").addEventListener("click", function(e) {
+    if (e.target === this) closeWaModal();
+  });
+</script>
 </body>
 </html>

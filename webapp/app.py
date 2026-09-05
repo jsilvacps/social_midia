@@ -20,7 +20,7 @@ from pathlib import Path
 import concurrent.futures
 
 import requests
-from flask import (Flask, Response, jsonify, redirect, render_template,
+from flask import (Flask, Response, jsonify, make_response, redirect, render_template,
                    request, send_file, session, stream_with_context, url_for)
 
 
@@ -953,8 +953,11 @@ def admin_panel():
         FROM users u ORDER BY u.created_at DESC
     """).fetchall()
     conn.close()
-    return render_template("admin.html", users=[dict(u) for u in users],
-                           current_user=get_current_user())
+    resp = make_response(render_template("admin.html", users=[dict(u) for u in users],
+                           current_user=get_current_user()))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 @app.route("/admin/users/<int:uid>/plan", methods=["POST"])
 @require_admin

@@ -1,4 +1,4 @@
-const CACHE = "pedeja-v3";
+const CACHE = "pedeja-v6";
 const STATIC = ["/", "/static/manifest.json"];
 
 self.addEventListener("install", e => {

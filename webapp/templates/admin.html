@@ -642,6 +642,7 @@ function openWaModal(uid, name) {
   document.getElementById("wa-status-badge").textContent = "…";
   document.getElementById("wa-status-badge").style.color = "var(--muted)";
   var pb = document.getElementById("wa-phone-badge"); if(pb) pb.style.display="none";
+  var ch = document.getElementById("wa-connect-hint"); if(ch) ch.style.display="none";
   modal.style.display = "flex";
   clearInterval(waPollTimer);
   loadWaStatus(uid);
@@ -691,16 +692,17 @@ async function loadWaStatus(uid) {
       if (btnPairing) btnPairing.style.display = "none";
       clearInterval(waPollTimer);
     } else {
-      badge.textContent = "🟡 Aguardando QR";
+      badge.textContent = "🟡 Aguardando conexão do cliente";
       badge.style.color = "var(--warning)";
+      var hint = document.getElementById("wa-connect-hint");
+      if (hint) hint.style.display = "block";
       btnCreate.style.display = "none";
       btnDisc.style.display   = "inline-flex";
-      btnQr.style.display     = "inline-flex";
-      if (btnPairing) btnPairing.style.display = "inline-flex";
-      loadWaQr(uid);
-      // polling a cada 4s
+      btnQr.style.display     = "none";
+      if (btnPairing) btnPairing.style.display = "none";
+      // polling a cada 5s para detectar quando o cliente conectar
       if (!waPollTimer) {
-        waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 4000);
+        waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 5000);
       }
     }
   }
@@ -869,47 +871,15 @@ async function disconnectWa() {
     <div id="wa-status-badge" style="font-size:14px;margin-bottom:8px;font-weight:600">…</div>
     <div id="wa-phone-badge" style="display:none;font-size:12px;color:var(--muted);margin-bottom:12px">📞 <span id="wa-phone-num"></span></div>
 
-    <!-- QR Code -->
-    <img id="wa-qr-img" src="" alt="QR Code"
-         style="display:none;width:220px;height:220px;border-radius:12px;border:4px solid var(--border);margin:0 auto 12px;object-fit:contain;background:#fff">
-
-    <p id="wa-qr-hint" style="display:none;font-size:12px;color:var(--muted);margin-bottom:12px">
-      Abra o WhatsApp → Aparelhos conectados → Conectar aparelho → aponte para o QR
-    </p>
-
-    <!-- Pairing Code -->
-    <div id="wa-pairing-box" style="display:none;margin-bottom:16px">
-      <div id="wa-pairing-code" style="font-size:32px;font-weight:800;letter-spacing:8px;color:var(--green);margin-bottom:8px"></div>
-      <p style="font-size:12px;color:var(--muted)">
-        WhatsApp → Aparelhos conectados → Vincular com número de telefone → digite o código acima
-      </p>
-    </div>
-
-    <!-- Campo número para pairing -->
-    <div id="wa-pairing-input" style="display:none;margin-bottom:16px">
-      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-        <div style="background:#1e2d4a;padding:8px 10px;font-size:13px;color:#94a3b8;display:flex;align-items:center;border-right:1px solid var(--border)">🇧🇷 +55</div>
-        <input id="wa-phone-input" type="tel" placeholder="(11) 99999-8888"
-               style="flex:1;background:var(--bg);border:none;padding:8px 10px;color:var(--text);font-size:13px;outline:none">
-      </div>
+    <!-- Aviso para cliente conectar -->
+    <div id="wa-connect-hint" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 14px;font-size:12px;color:#fbbf24;margin-bottom:14px;line-height:1.5">
+      📲 Peça ao cliente para acessar o app e conectar o WhatsApp na aba <strong>⚙️ Config</strong>
     </div>
 
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
       <button id="wa-btn-create" onclick="createWaInstance()"
               class="btn btn-success btn-sm" style="display:none">
         ➕ Criar Instância
-      </button>
-      <button id="wa-btn-qr" onclick="loadWaQr(waUid)"
-              class="btn btn-ghost btn-sm" style="display:none">
-        🔄 QR Code
-      </button>
-      <button id="wa-btn-pairing" onclick="togglePairingInput()"
-              class="btn btn-ghost btn-sm" style="display:none">
-        🔢 Usar código
-      </button>
-      <button id="wa-btn-pairing-send" onclick="requestPairingCode()"
-              class="btn btn-success btn-sm" style="display:none">
-        Gerar código
       </button>
       <button id="wa-btn-disc" onclick="disconnectWa()"
               class="btn btn-danger btn-sm" style="display:none">

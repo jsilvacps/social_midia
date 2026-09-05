@@ -1068,7 +1068,7 @@ def api_admin_create_user():
             msg = (
                 f"👋 Olá, *{nome_cli}*! Seja bem-vindo(a) ao *⚡ ZapShot*!\n\n"
                 f"Sua conta foi criada com sucesso. Aqui estão seus dados de acesso:\n\n"
-                f"🔗 *Link do app:* {app_url}\n"
+                f"🔗 *Link do app:* {app_url.rstrip('/')}/login\n"
                 f"📧 *Email:* {email}\n"
                 f"🔑 *Senha temporária:* {password}\n\n"
                 f"⚠️ No primeiro acesso você será solicitado a criar uma senha pessoal.\n\n"

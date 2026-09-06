@@ -1974,11 +1974,27 @@ def api_posts():
     uid  = session["user_id"]
     conn = db()
     rows = conn.execute(
-        "SELECT * FROM posts WHERE user_id=? ORDER BY scheduled_at DESC LIMIT 200",
+        """SELECT id,caption,filename,media_type,wa_groups,scheduled_at,status,
+                  sent_at,result,batch_id,batch_title,suspend_from,suspend_to,send_all_groups
+           FROM posts WHERE user_id=? ORDER BY scheduled_at DESC LIMIT 100""",
         (uid,)
     ).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    out = []
+    for r in rows:
+        d = dict(r)
+        # Comprime o campo result: substitui nomes de grupos pelo resumo ok/erro
+        try:
+            res = json.loads(d.get("result") or "{}")
+            wa = res.get("wa", {})
+            ok  = sum(1 for v in wa.values() if v == "ok")
+            err = sum(1 for v in wa.values() if v != "ok")
+            d["result_summary"] = {"ok": ok, "err": err}
+            d["result"] = json.dumps(res)  # mantém completo p/ modal de detalhes
+        except Exception:
+            d["result_summary"] = {"ok": 0, "err": 0}
+        out.append(d)
+    return jsonify(out)
 
 @app.route("/api/posts", methods=["POST"])
 @require_login

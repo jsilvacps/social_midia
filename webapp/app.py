@@ -78,8 +78,19 @@ class _PgWrapper:
 
     def executemany(self, sql, seq):
         sql = self._adapt(sql)
+        seq = list(seq)
         cur = self._conn.cursor()
-        cur.executemany(sql, seq)
+        # execute_values envia todos os rows num único round-trip ao PostgreSQL
+        # (muito mais rápido que executemany que faz 1 round-trip por linha)
+        if seq:
+            # Constrói o template com a quantidade certa de %s
+            n_cols = len(seq[0])
+            template = "(" + ",".join(["%s"] * n_cols) + ")"
+            # Substitui o VALUES (...todos os %s...) pelo template do execute_values
+            # execute_values espera: INSERT INTO t (cols) VALUES %s
+            parts = sql.split("VALUES", 1)
+            sql_ev = parts[0] + "VALUES %s"
+            psycopg2.extras.execute_values(cur, sql_ev, seq, template=template, page_size=200)
 
     def commit(self):
         self._conn.commit()

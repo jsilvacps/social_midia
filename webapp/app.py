@@ -2437,7 +2437,7 @@ def api_buscar_grupos():
                     seen_codes.add(code)
                     pinned_to_add.append({
                         "link": pin["link"], "name": pin["name"],
-                        "title": pin["name"], "snippet": "⭐ Grupo em destaque"
+                        "title": pin["name"], "snippet": ""
                     })
         results = pinned_to_add + results
 

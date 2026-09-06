@@ -210,8 +210,9 @@ def init_db():
             batch_id     TEXT    DEFAULT '',
             batch_title  TEXT    DEFAULT '',
             client_phone TEXT    DEFAULT '',
-            suspend_from TEXT    DEFAULT '',
-            suspend_to   TEXT    DEFAULT ''
+            suspend_from    TEXT    DEFAULT '',
+            suspend_to      TEXT    DEFAULT '',
+            send_all_groups INTEGER DEFAULT 0
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS wa_imported_groups (
             id          SERIAL PRIMARY KEY,
@@ -282,6 +283,15 @@ def init_db():
                 conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {defval}")
             except Exception:
                 pass
+        # Migrations PostgreSQL (colunas adicionadas depois do deploy inicial)
+        for col, defval in [
+            ("send_all_groups", "0"),
+        ]:
+            if not _col_exists(conn, "posts", col):
+                try:
+                    conn.execute(f"ALTER TABLE posts ADD COLUMN {col} INTEGER DEFAULT {defval}")
+                except Exception:
+                    pass
     conn.commit()
     conn.close()
 

@@ -2416,7 +2416,32 @@ def api_buscar_grupos():
         for gr in gw_results:
             results.append(gr)
 
-        print(f"[buscar_grupos] lotes={len(lotes)} tasks={len(tasks)} diretos={len(seen_codes)} gw={len(gw_results)} total={len(results)}")
+        # ── Grupos pinados (aparecem primeiro quando critérios batem) ──────────
+        PINNED_GROUPS = [
+            {
+                "keywords": ["hortolândia", "hortolandia", "hortolândia sp", "hortolandia sp"],
+                "temas":    [],  # vazio = qualquer tema
+                "link":  "https://chat.whatsapp.com/IvArtQuj9kW9vmi3NJ58tA",
+                "name":  "Feira do Rolo Hortolândia Campinas e região",
+            },
+        ]
+        local_lower = local.lower()
+        tema_lower  = tema.lower()
+        pinned_to_add = []
+        for pin in PINNED_GROUPS:
+            kw_match    = any(k in local_lower for k in pin["keywords"])
+            tema_match  = not pin["temas"] or any(t in tema_lower for t in pin["temas"])
+            if kw_match and tema_match:
+                code = pin["link"].split("/")[-1]
+                if code not in seen_codes:
+                    seen_codes.add(code)
+                    pinned_to_add.append({
+                        "link": pin["link"], "name": pin["name"],
+                        "title": pin["name"], "snippet": "⭐ Grupo em destaque"
+                    })
+        results = pinned_to_add + results
+
+        print(f"[buscar_grupos] lotes={len(lotes)} tasks={len(tasks)} diretos={len(seen_codes)} gw={len(gw_results)} pinned={len(pinned_to_add)} total={len(results)}")
         return jsonify({"ok": True, "results": results})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})

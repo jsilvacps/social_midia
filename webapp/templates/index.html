@@ -1364,6 +1364,7 @@ function buildBatchCard(batchKey, posts) {
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:0 14px 10px;justify-content:flex-end">
+      ${batchId && posts.some(p=>p.status==='pending') ? `<button class="btn btn-ghost btn-sm" onclick="abrirEditarLote('${batchId}',\`${esc(caption)}\`,\`${next?next.scheduled_at:''}\`)">✏️ Editar</button>` : ""}
       ${!isSolo && batchId ? `<button class="btn btn-danger btn-sm" onclick="deleteBatch('${batchId}')">🗑 Excluir lote</button>` : ""}
     </div>
     <div id="${uid}-body" style="display:none;border-top:1px solid var(--border)">
@@ -1603,6 +1604,51 @@ async function deletePost(id) {
   document.getElementById(`post-${id}`)?.remove();
   toast("🗑 Removido");
 }
+
+// ── Editar lote ──────────────────────────────────────────
+var _editBatchId = null;
+function abrirEditarLote(batchId, caption, scheduledAt) {
+  _editBatchId = batchId;
+  document.getElementById("edit-batch-caption").value = caption || "";
+  // Formata para datetime-local (YYYY-MM-DDTHH:MM)
+  const dt = scheduledAt ? scheduledAt.substring(0,16) : "";
+  document.getElementById("edit-batch-dt").value = dt;
+  document.getElementById("edit-batch-msg").style.display = "none";
+  const modal = document.getElementById("edit-batch-modal");
+  modal.style.display = "flex";
+}
+function fecharEditarLote() {
+  document.getElementById("edit-batch-modal").style.display = "none";
+  _editBatchId = null;
+}
+async function salvarEdicaoLote() {
+  if (!_editBatchId) return;
+  const caption     = document.getElementById("edit-batch-caption").value;
+  const scheduledAt = document.getElementById("edit-batch-dt").value;
+  const btn = document.getElementById("edit-batch-save-btn");
+  btn.disabled = true; btn.textContent = "⏳ Salvando…";
+  const r = await fetch(`/api/posts/batch/${_editBatchId}`, {
+    method: "PATCH",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ caption, scheduled_at: scheduledAt || undefined })
+  }).then(r=>r.json()).catch(()=>({ok:false,error:"Erro de rede"}));
+  btn.disabled = false; btn.textContent = "💾 Salvar alterações";
+  const msg = document.getElementById("edit-batch-msg");
+  if (r.ok) {
+    msg.style.display = "block";
+    msg.style.color = "var(--green)";
+    msg.textContent = `✅ ${r.editados} post(s) atualizado(s)`;
+    setTimeout(() => { fecharEditarLote(); loadPosts(); }, 1500);
+  } else {
+    msg.style.display = "block";
+    msg.style.color = "var(--danger)";
+    msg.textContent = "❌ " + (r.error || "Erro ao salvar");
+  }
+}
+// Fecha modal ao clicar fora
+document.getElementById("edit-batch-modal")?.addEventListener("click", function(e) {
+  if (e.target === this) fecharEditarLote();
+});
 
 async function deleteBatch(batchId) {
   if(!confirm("Excluir TODOS os disparos deste lote?")) return;
@@ -2008,6 +2054,32 @@ function dismissPwaBanner() {
 </script>
 
 {% if show_welcome %}
+<!-- Modal Editar Lote -->
+<div id="edit-batch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1200;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:420px;max-width:95vw;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong style="font-size:16px">✏️ Editar lote</strong>
+      <button onclick="fecharEditarLote()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Texto / legenda</label>
+      <textarea id="edit-batch-caption" rows="5"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none;resize:vertical;font-family:inherit;line-height:1.5"></textarea>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Novo horário do 1º disparo</label>
+      <input type="datetime-local" id="edit-batch-dt"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none">
+      <span style="font-size:11px;color:var(--muted)">O intervalo entre os disparos do lote é mantido automaticamente.</span>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="fecharEditarLote()" class="btn btn-ghost btn-sm">Cancelar</button>
+      <button onclick="salvarEdicaoLote()" class="btn btn-primary btn-sm" id="edit-batch-save-btn">💾 Salvar alterações</button>
+    </div>
+    <div id="edit-batch-msg" style="font-size:13px;text-align:center;display:none"></div>
+  </div>
+</div>
+
 <!-- Modal Boas-vindas (primeiro acesso) -->
 <div id="welcome-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px">
   <div style="background:#0f1829;border:1px solid #1e2d4a;border-radius:20px;width:520px;max-width:100%;max-height:90vh;overflow-y:auto">

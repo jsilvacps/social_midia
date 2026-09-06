@@ -27,128 +27,72 @@
       justify-content: center;
       padding: 16px;
     }
+    .container { width: 100%; max-width: 420px; }
 
-    .container {
-      width: 100%;
-      max-width: 420px;
-    }
-
-    /* Logo */
-    .logo-area {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .logo-area img {
-      width: 64px;
-      height: 64px;
-      border-radius: 16px;
-      object-fit: contain;
-      margin-bottom: 12px;
-    }
+    .logo-area { text-align: center; margin-bottom: 32px; }
+    .logo-area img { width: 64px; height: 64px; border-radius: 16px; object-fit: contain; margin-bottom: 12px; }
     .logo-area h1 {
-      font-size: 28px;
-      font-weight: 800;
+      font-size: 28px; font-weight: 800;
       background: linear-gradient(90deg, #00e5a0, #3b82f6, #8b5cf6);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
-    .logo-area p {
-      color: var(--muted);
-      font-size: 13px;
-      margin-top: 4px;
-    }
+    .logo-area p { color: var(--muted); font-size: 13px; margin-top: 4px; }
 
-    /* Card */
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 28px 24px;
-    }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px 24px; }
 
-    /* Tabs */
-    .tabs {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 24px;
-    }
+    .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
     .tab-btn {
-      flex: 1;
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 600;
-      padding: 10px;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: all .2s;
+      flex: 1; background: none; border: none; color: var(--muted);
+      font-size: 14px; font-weight: 600; padding: 10px; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all .2s;
     }
-    .tab-btn.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-    /* Form */
     .form { display: flex; flex-direction: column; gap: 16px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
     .field input {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 14px;
-      padding: 10px 12px;
-      outline: none;
-      transition: border-color .2s;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 14px; padding: 10px 12px; outline: none; transition: border-color .2s;
     }
     .field input:focus { border-color: var(--accent); }
 
+    .remember-row {
+      display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer;
+    }
+    .remember-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
     .btn {
-      padding: 12px;
-      border-radius: 10px;
-      border: none;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity .2s;
-      margin-top: 4px;
+      padding: 12px; border-radius: 10px; border: none; font-size: 15px;
+      font-weight: 700; cursor: pointer; transition: opacity .2s; margin-top: 4px; width: 100%;
     }
     .btn:hover { opacity: .85; }
-    .btn-primary {
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      color: #fff;
+    .btn-primary { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; }
+    .btn-bio {
+      background: rgba(0,229,160,.1); border: 1px solid rgba(0,229,160,.3);
+      color: var(--green); font-size: 14px; padding: 10px; display: none; align-items: center;
+      justify-content: center; gap: 8px; border-radius: 10px; cursor: pointer;
+      transition: background .2s; margin-top: 0;
     }
+    .btn-bio:hover { background: rgba(0,229,160,.2); }
+    .btn-bio.visible { display: flex; }
+
+    .divider {
+      display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px;
+    }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
     .error-box {
-      background: rgba(239,68,68,.1);
-      border: 1px solid rgba(239,68,68,.3);
-      border-radius: 8px;
-      color: var(--danger);
-      font-size: 13px;
-      padding: 10px 12px;
-      text-align: center;
+      background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px; color: var(--danger); font-size: 13px; padding: 10px 12px; text-align: center;
     }
 
-    .badge {
-      display: inline-block;
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 20px;
-      font-weight: 600;
-    }
-    .badge-trial  { background: rgba(59,130,246,.15); color: #3b82f6; }
-    .badge-active { background: rgba(0,229,160,.15);  color: #00e5a0; }
-
-    footer {
-      text-align: center;
-      margin-top: 20px;
-      font-size: 12px;
-      color: var(--muted);
-    }
+    footer { text-align: center; margin-top: 20px; font-size: 12px; color: var(--muted); }
     footer a { color: var(--accent); text-decoration: none; }
+
+    /* Spinner */
+    .spinner { display: none; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -171,37 +115,56 @@
 
     <!-- Login -->
     <div id="tab-login" class="form" style="{% if tab!='login' %}display:none{% endif %}">
-      <form method="POST" action="/login" class="form">
+
+      <!-- Botão biometria (aparece se credenciais salvas) -->
+      <button type="button" class="btn-bio" id="bio-btn" onclick="loginComBiometria()">
+        <span id="bio-icon">🔑</span>
+        <span id="bio-label">Entrar com biometria / impressão digital</span>
+      </button>
+      <div class="divider" id="bio-divider" style="display:none">ou use email e senha</div>
+
+      <form method="POST" action="/login" class="form" id="login-form" autocomplete="on">
         <div class="field">
           <label>Email</label>
-          <input type="email" name="email" placeholder="seu@email.com" required>
+          <input type="email" name="email" id="login-email" placeholder="seu@email.com"
+                 autocomplete="username" required>
         </div>
         <div class="field">
           <label>Senha</label>
-          <input type="password" name="password" placeholder="••••••••" required>
+          <input type="password" name="password" id="login-password" placeholder="••••••••"
+                 autocomplete="current-password" required>
         </div>
-        <button type="submit" class="btn btn-primary">🚀 Entrar</button>
+
+        <label class="remember-row">
+          <input type="checkbox" name="remember" id="remember-me" checked>
+          Lembrar de mim por 30 dias
+        </label>
+
+        <button type="submit" class="btn btn-primary" id="login-btn">
+          <span id="login-btn-text">🚀 Entrar</span>
+          <span class="spinner" id="login-spinner" style="display:none;margin:0 auto"></span>
+        </button>
       </form>
     </div>
 
     <!-- Register -->
     <div id="tab-register" style="{% if tab!='register' %}display:none{% endif %}">
-      <form method="POST" action="/register" class="form">
+      <form method="POST" action="/register" class="form" autocomplete="on">
         <div class="field">
           <label>Nome</label>
-          <input type="text" name="name" placeholder="Seu nome">
+          <input type="text" name="name" placeholder="Seu nome" autocomplete="name">
         </div>
         <div class="field">
           <label>Email</label>
-          <input type="email" name="email" placeholder="seu@email.com" required>
+          <input type="email" name="email" placeholder="seu@email.com" autocomplete="username" required>
         </div>
         <div class="field">
           <label>Senha</label>
-          <input type="password" name="password" placeholder="Mínimo 6 caracteres" required>
+          <input type="password" name="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password" required>
         </div>
         <div class="field">
           <label>Confirmar senha</label>
-          <input type="password" name="confirm" placeholder="Repita a senha" required>
+          <input type="password" name="confirm" placeholder="Repita a senha" autocomplete="new-password" required>
         </div>
         <button type="submit" class="btn btn-primary">✅ Criar conta</button>
       </form>
@@ -214,6 +177,7 @@
 </div>
 
 <script>
+// ── Tabs ─────────────────────────────────────────────────
 function showTab(name) {
   document.getElementById("tab-login").style.display    = name === "login"    ? "" : "none";
   document.getElementById("tab-register").style.display = name === "register" ? "" : "none";
@@ -221,6 +185,94 @@ function showTab(name) {
     b.classList.toggle("active", (i===0 && name==="login") || (i===1 && name==="register"));
   });
 }
+
+// ── Credential Management API (biometria / senha salva) ───
+const CM = window.PasswordCredential || window.FederatedCredential;
+const hasCM = !!(window.navigator && navigator.credentials && CM);
+
+async function verificarCredenciaisSalvas() {
+  if (!hasCM) return;
+  try {
+    const cred = await navigator.credentials.get({
+      password: true,
+      mediation: "optional"  // não força prompt, só verifica se tem salvo
+    });
+    if (cred) {
+      // Tem credencial salva — mostra botão de biometria
+      document.getElementById("bio-btn").classList.add("visible");
+      document.getElementById("bio-divider").style.display = "flex";
+      // Ícone muda conforme suporte a biometria do dispositivo
+      if (window.PublicKeyCredential) {
+        PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(ok => {
+          if (ok) {
+            document.getElementById("bio-icon").textContent = "🖐️";
+            document.getElementById("bio-label").textContent = "Entrar com biometria / Face ID";
+          }
+        });
+      }
+      // Auto-preenche os campos (sem submeter automaticamente)
+      if (cred.id)       document.getElementById("login-email").value    = cred.id;
+      if (cred.password) document.getElementById("login-password").value = cred.password;
+    }
+  } catch(e) {}
+}
+
+async function loginComBiometria() {
+  if (!hasCM) return;
+  try {
+    const cred = await navigator.credentials.get({
+      password: true,
+      mediation: "required"  // força o seletor / biometria do dispositivo
+    });
+    if (!cred) return;
+    document.getElementById("login-email").value    = cred.id;
+    document.getElementById("login-password").value = cred.password;
+    document.getElementById("login-form").requestSubmit();
+  } catch(e) {
+    // Usuário cancelou — não faz nada
+  }
+}
+
+// ── Salvar credenciais após login bem-sucedido ────────────
+async function salvarCredenciais(email, password) {
+  if (!hasCM || !window.PasswordCredential) return;
+  try {
+    const cred = new PasswordCredential({ id: email, password: password });
+    await navigator.credentials.store(cred);
+  } catch(e) {}
+}
+
+// ── Intercepta submit para salvar credenciais + spinner ───
+document.getElementById("login-form").addEventListener("submit", async function(e) {
+  e.preventDefault();
+  const email    = document.getElementById("login-email").value;
+  const password = document.getElementById("login-password").value;
+  const remember = document.getElementById("remember-me").checked;
+
+  // Mostra spinner
+  document.getElementById("login-btn-text").style.display = "none";
+  document.getElementById("login-spinner").style.display  = "block";
+
+  // Salva credenciais no gerenciador do navegador (pede biometria no futuro)
+  await salvarCredenciais(email, password);
+
+  // Submete via fetch para incluir o campo remember
+  const form = new FormData();
+  form.append("email",    email);
+  form.append("password", password);
+  form.append("remember", remember ? "1" : "0");
+
+  const resp = await fetch("/login", { method: "POST", body: form });
+  if (resp.redirected) {
+    window.location.href = resp.url;
+  } else {
+    // Resposta com erro — recarrega a página para mostrar mensagem
+    document.open(); document.write(await resp.text()); document.close();
+  }
+});
+
+// Verifica credenciais salvas ao carregar
+verificarCredenciaisSalvas();
 </script>
 </body>
 </html>

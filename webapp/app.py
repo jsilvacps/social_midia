@@ -55,6 +55,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["JSON_ENSURE_ASCII"] = False
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
 # ── Database ───────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -937,6 +938,8 @@ def login():
             return render_template("login.html", error="Email ou senha inválidos.", tab="login")
         if user["plan"] == "inactive":
             return render_template("login.html", error="Sua conta está inativa. Entre em contato com o suporte.", tab="login")
+        remember = request.form.get("remember", "0") == "1"
+        session.permanent = remember
         session["user_id"] = user["id"]
         session["user_name"] = user["name"] or user["email"]
         session["is_admin"] = bool(user["is_admin"])
@@ -1890,6 +1893,54 @@ def api_delete_post(post_id):
         conn.commit()
     conn.close()
     return jsonify({"ok": True})
+
+@app.route("/api/posts/batch/<batch_id>", methods=["PATCH"])
+@require_login
+def api_edit_batch(batch_id):
+    """Edita caption e/ou reagenda todos os posts pendentes de um lote."""
+    uid  = session["user_id"]
+    data = request.get_json() or {}
+    conn = db()
+    # Só edita posts ainda pendentes do usuário
+    rows = conn.execute(
+        "SELECT id, scheduled_at FROM posts WHERE batch_id=? AND user_id=? AND status='pending' ORDER BY scheduled_at",
+        (batch_id, uid)
+    ).fetchall()
+    if not rows:
+        conn.close()
+        return jsonify({"ok": False, "error": "Nenhum post pendente neste lote"})
+
+    updates = []
+    new_caption   = data.get("caption")
+    new_start_str = data.get("scheduled_at")  # novo horário do 1º post
+
+    if new_start_str:
+        try:
+            new_start = datetime.fromisoformat(new_start_str)
+            # Mantém o intervalo original entre os posts
+            original_start = datetime.fromisoformat(rows[0]["scheduled_at"])
+            for row in rows:
+                original_dt = datetime.fromisoformat(row["scheduled_at"])
+                delta = original_dt - original_start
+                new_dt = new_start + delta
+                updates.append((new_dt.strftime("%Y-%m-%dT%H:%M"), row["id"]))
+        except Exception as e:
+            conn.close()
+            return jsonify({"ok": False, "error": f"Horário inválido: {e}"})
+
+    if updates:
+        for new_sched, pid in updates:
+            if new_caption is not None:
+                conn.execute("UPDATE posts SET scheduled_at=?, caption=? WHERE id=?", (new_sched, new_caption, pid))
+            else:
+                conn.execute("UPDATE posts SET scheduled_at=? WHERE id=?", (new_sched, pid))
+    elif new_caption is not None:
+        conn.execute("UPDATE posts SET caption=? WHERE batch_id=? AND user_id=? AND status='pending'",
+                     (new_caption, batch_id, uid))
+
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "editados": len(rows)})
 
 @app.route("/api/posts/batch/<batch_id>", methods=["DELETE"])
 @require_login

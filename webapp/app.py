@@ -103,8 +103,13 @@ class _PgWrapper:
         sql = sql.replace("?", "%s")
         sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
         sql = sql.replace("datetime('now')", "NOW()")
-        sql = sql.replace("INSERT OR REPLACE", "INSERT")
-        sql = sql.replace("INSERT OR IGNORE", "INSERT")
+        # INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
+        if "INSERT OR IGNORE INTO" in sql:
+            sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+            sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+        # INSERT OR REPLACE → INSERT ... ON CONFLICT DO UPDATE (substitui tudo)
+        elif "INSERT OR REPLACE INTO" in sql:
+            sql = sql.replace("INSERT OR REPLACE INTO", "INSERT INTO")
         return sql
 
 class _CursorWrapper:
@@ -294,17 +299,32 @@ def init_db():
                 conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {defval}")
             except Exception:
                 pass
-        # Migrations PostgreSQL (colunas adicionadas depois do deploy inicial)
-        for col, defval in [
-            ("send_all_groups", "0"),
-        ]:
-            if not _col_exists(conn, "posts", col):
-                try:
-                    conn.execute(f"ALTER TABLE posts ADD COLUMN {col} INTEGER DEFAULT {defval}")
-                except Exception:
-                    pass
     conn.commit()
     conn.close()
+
+    # ── Migrations PostgreSQL (colunas adicionadas depois do deploy inicial) ──
+    # IMPORTANTE: fora do bloco if/else para rodar sempre no PG
+    if USE_PG:
+        conn2 = db()
+        pg_migrations = [
+            ("posts", "send_all_groups", "INTEGER DEFAULT 0"),
+            ("posts", "client_phone",    "TEXT    DEFAULT ''"),
+            ("posts", "suspend_from",    "TEXT    DEFAULT ''"),
+            ("posts", "suspend_to",      "TEXT    DEFAULT ''"),
+            ("posts", "batch_title",     "TEXT    DEFAULT ''"),
+            ("users", "trial_expires_at","TEXT    DEFAULT NULL"),
+            ("users", "features",        "TEXT    DEFAULT '[]'"),
+            ("users", "must_change_password", "INTEGER DEFAULT 0"),
+        ]
+        for table, col, defn in pg_migrations:
+            if not _col_exists(conn2, table, col):
+                try:
+                    conn2.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")
+                    conn2.commit()
+                    print(f"[init_db] PG migration: ALTER TABLE {table} ADD COLUMN {col}")
+                except Exception as e:
+                    print(f"[init_db] PG migration erro {table}.{col}: {e}")
+        conn2.close()
 
 init_db()
 
@@ -1521,6 +1541,9 @@ def index():
                            show_welcome=show_welcome)
 
 # ── Media serve (público – Evolution API chama de fora) ───────────────────────
+_MIME_MAP = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+             ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
+
 @app.route("/api/media/<filename>")
 def api_media(filename):
     safe = Path(filename).name
@@ -1528,9 +1551,10 @@ def api_media(filename):
     if not path.exists():
         return "Not found", 404
     ext = path.suffix.lower()
-    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-                ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
-    return send_file(str(path), mimetype=mime_map.get(ext, "application/octet-stream"), conditional=False)
+    resp = send_file(str(path), mimetype=_MIME_MAP.get(ext, "application/octet-stream"),
+                     conditional=True)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 @app.route("/api/library/file/<filename>")
 def api_library_file(filename):
@@ -1539,12 +1563,10 @@ def api_library_file(filename):
     if not path.exists():
         return "Not found", 404
     ext = path.suffix.lower()
-    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-                ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
-    with open(str(path), "rb") as f:
-        data = f.read()
-    return Response(data, mimetype=mime_map.get(ext, "application/octet-stream"),
-                    headers={"Content-Length": str(len(data))})
+    resp = send_file(str(path), mimetype=_MIME_MAP.get(ext, "application/octet-stream"),
+                     conditional=True)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])

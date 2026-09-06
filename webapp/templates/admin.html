@@ -685,8 +685,8 @@ async function importarGruposUsuario(uid, name, btn) {
   if (r.ok) {
     btn.textContent = `✅ ${r.grupos}`;
     setTimeout(() => { btn.disabled = false; btn.textContent = "📥 Grupos"; }, 3000);
-    // Recarrega a tabela de grupos
-    if (typeof loadGruposWa === "function") loadGruposWa();
+    // Aguarda 15s para os grupos serem salvos em background, depois recarrega
+    setTimeout(() => loadGruposWa(), 15000);
   } else {
     btn.textContent = "❌";
     setTimeout(() => { btn.disabled = false; btn.textContent = "📥 Grupos"; }, 3000);
@@ -745,13 +745,14 @@ async function disconnectWa() {
 }
 
 // Load grupos WA
-(async () => {
+async function loadGruposWa() {
   try {
     todosGrupos = await fetch("/api/admin/grupos-wa").then(r=>r.json());
     document.getElementById("grupos-wa-count").textContent = `${todosGrupos.length} grupos coletados`;
     renderGrupos(todosGrupos);
   } catch(e) {}
-})();
+}
+loadGruposWa();
 </script>
 
 <!-- Modal Reenviar Boas-vindas -->

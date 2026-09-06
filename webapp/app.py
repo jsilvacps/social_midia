@@ -973,23 +973,27 @@ def _scheduler_loop():
 threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
 
 # ── Limpeza automática de conversas WA ────────────────────────────────────────
-def wa_clear_chat(jid: str, cfg: dict) -> bool:
+def wa_clear_chat(jid: str, cfg: dict) -> tuple[bool, str]:
     """Limpa o histórico de uma conversa no WhatsApp via Evolution API."""
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     if not base or not instance:
-        return False
-    try:
-        r = requests.delete(
-            f"{base}/chat/clearMessage/{instance}",
-            headers=_evo_headers(cfg),
-            json={"remoteJid": jid},
-            timeout=10
-        )
-        return r.status_code < 300
-    except Exception as e:
-        print(f"[clear_chat] {jid}: {e}")
-        return False
+        return False, "não configurado"
+    # Tenta DELETE primeiro, depois POST (depende da versão da Evolution API)
+    for method, url in [
+        ("DELETE", f"{base}/chat/clearMessage/{instance}"),
+        ("POST",   f"{base}/chat/clearMessage/{instance}"),
+        ("DELETE", f"{base}/chat/clearMessages/{instance}"),
+    ]:
+        try:
+            fn = requests.delete if method == "DELETE" else requests.post
+            r  = fn(url, headers=_evo_headers(cfg), json={"remoteJid": jid}, timeout=10)
+            print(f"[clear_chat] {method} {url} jid={jid} → {r.status_code} {r.text[:120]}")
+            if r.status_code < 300:
+                return True, ""
+        except Exception as e:
+            print(f"[clear_chat] {method} {jid}: {e}")
+    return False, f"HTTP falhou (ver logs)"
 
 def wa_clear_all_group_chats(user_id: int) -> dict:
     """Limpa o histórico de todos os grupos WA do usuário."""
@@ -997,14 +1001,20 @@ def wa_clear_all_group_chats(user_id: int) -> dict:
     groups, err = wa_get_groups(cfg)
     if not groups:
         return {"ok": False, "error": err or "Sem grupos"}
-    total = len(groups)
+    total    = len(groups)
     ok_count = 0
+    last_err = ""
     for g in groups:
         jid = g.get("id", "")
-        if jid and wa_clear_chat(jid, cfg):
-            ok_count += 1
+        if jid:
+            ok, e = wa_clear_chat(jid, cfg)
+            if ok:
+                ok_count += 1
+            elif e:
+                last_err = e
         time.sleep(0.2)  # evita rate limit
-    return {"ok": True, "total": total, "cleared": ok_count}
+    return {"ok": True, "total": total, "cleared": ok_count,
+            "error": last_err if ok_count == 0 else ""}
 
 def _auto_clear_loop():
     """Job que limpa conversas de grupo a cada hora para todos os usuários com auto_clear_chats=1."""

@@ -1034,7 +1034,7 @@ threading.Thread(target=_auto_clear_loop, daemon=True, name="auto_clear").start(
 
 # ── Rota: limpar conversas manualmente ────────────────────────────────────────
 @app.route("/api/limpar-conversas", methods=["POST"])
-@login_required
+@require_login
 def api_limpar_conversas():
     uid = session["user_id"]
     result = wa_clear_all_group_chats(uid)
@@ -1042,16 +1042,11 @@ def api_limpar_conversas():
 
 # ── Rota: toggle limpeza automática ───────────────────────────────────────────
 @app.route("/api/config/auto-clear-chats", methods=["POST"])
-@login_required
+@require_login
 def api_toggle_auto_clear():
     uid   = session["user_id"]
     value = "1" if request.json.get("enabled") else "0"
-    conn  = db()
-    conn.execute(
-        "INSERT INTO config (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=EXCLUDED.value",
-        (uid, "auto_clear_chats", value)
-    )
-    conn.commit(); conn.close()
+    save_config({"auto_clear_chats": value}, user_id=uid)
     return jsonify({"ok": True, "enabled": value == "1"})
 
 # ══════════════════════════════════════════════════════════════════════════════

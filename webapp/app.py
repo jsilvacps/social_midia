@@ -825,14 +825,15 @@ def _process_post_inner(post_id, row, cfg):
         gid  = g.get("id", g) if isinstance(g, dict) else g
         name = g.get("name", gid) if isinstance(g, dict) else gid
         result["wa"][name] = "⏳ enviando..."
-        _save_partial()
         ok, err = wa_send(gid, caption, filepath, media_type, cfg, db_filename=filename)
         result["wa"][name] = "ok" if ok else err
-        _save_partial()
         if not ok:
             errors.append(f"WA {name}: {err}")
+        # Salva progresso a cada 10 grupos (evita 150 round-trips ao banco)
+        if i % 10 == 9 or i == len(wa_groups) - 1:
+            _save_partial()
         if i < len(wa_groups) - 1:
-            time.sleep(1)
+            time.sleep(0.3)  # 300ms entre grupos (era 1s) — suficiente para evitar rate limit
 
     media_url = ig_media_url(filename, cfg)
     if ig_feed:

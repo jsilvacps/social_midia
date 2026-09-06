@@ -734,6 +734,17 @@ def process_post(post_id: int):
     conn.execute("UPDATE posts SET status='sending' WHERE id=?", (post_id,))
     conn.commit()
     conn.close()
+    try:
+        _process_post_inner(post_id, row, cfg)
+    except Exception as exc:
+        print(f"[process_post] ERRO FATAL post {post_id}: {exc}")
+        import traceback; traceback.print_exc()
+        c = db()
+        c.execute("UPDATE posts SET status='failed', result=? WHERE id=?",
+                  (json.dumps({"error": str(exc)}), post_id))
+        c.commit(); c.close()
+
+def _process_post_inner(post_id, row, cfg):
 
     caption    = row["caption"] or ""
     filename   = row["filename"] or ""
@@ -845,12 +856,18 @@ def _scheduler_loop():
             now_str  = now_dt.strftime("%Y-%m-%dT%H:%M")
             now_hm   = now_dt.strftime("%H:%M")
             conn = db()
+            # Posts pendentes prontos para enviar
             rows = conn.execute(
                 "SELECT id, suspend_from, suspend_to FROM posts WHERE status='pending' AND scheduled_at<=?",
                 (now_str + ":59",)
             ).fetchall()
+            # Posts presos como 'queued' há mais de 3 min (thread morreu antes de começar)
+            stale = conn.execute(
+                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='queued' AND scheduled_at<=?",
+                ((now_dt - __import__('datetime').timedelta(minutes=3)).strftime("%Y-%m-%dT%H:%M") + ":59",)
+            ).fetchall()
             conn.close()
-            for row in rows:
+            for row in list(rows) + list(stale):
                 sf = row["suspend_from"] or ""
                 st = row["suspend_to"]   or ""
                 if _in_suspend_window(sf, st, now_hm):
@@ -860,19 +877,18 @@ def _scheduler_loop():
                     c.commit(); c.close()
                 else:
                     # Marca como 'queued' atomicamente antes de lançar a thread
-                    # Isso evita que o próximo loop pegue o mesmo post novamente
                     c = db()
                     affected = c.execute(
-                        "UPDATE posts SET status='queued' WHERE id=? AND status='pending'",
+                        "UPDATE posts SET status='queued' WHERE id=? AND status IN ('pending','queued')",
                         (row["id"],)
                     ).rowcount
                     c.commit(); c.close()
-                    if affected:  # Só lança thread se conseguiu marcar (evita duplicatas)
+                    if affected:
+                        print(f"[scheduler] lançando post {row['id']}")
                         threading.Thread(target=process_post, args=(row["id"],), daemon=True).start()
-                    else:
-                        print(f"[scheduler] post {row['id']} já marcado por outra execução, pulando")
         except Exception as exc:
             print(f"[scheduler] {exc}")
+            import traceback; traceback.print_exc()
         time.sleep(30)
 
 threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
@@ -1658,6 +1674,17 @@ def api_wa_groups():
     t.start()
 
     return jsonify({"ok": True, "groups": groups})
+
+@app.route("/api/admin/reset-stuck-posts", methods=["POST"])
+@require_admin
+def api_reset_stuck_posts():
+    """Reseta posts presos em 'queued' ou 'sending' de volta para 'pending'."""
+    conn = db()
+    n = conn.execute(
+        "UPDATE posts SET status='pending' WHERE status IN ('queued','sending')"
+    ).rowcount
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "resetados": n})
 
 @app.route("/api/wa/debug-invite")
 @require_admin

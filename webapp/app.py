@@ -1749,6 +1749,46 @@ def api_reset_stuck_posts():
     conn.commit(); conn.close()
     return jsonify({"ok": True, "resetados": n})
 
+@app.route("/api/admin/migrar-db", methods=["GET", "POST"])
+@require_admin
+def api_migrar_db():
+    """Força execução das migrations pendentes (adiciona colunas que faltam)."""
+    import traceback
+    resultados = []
+    try:
+        conn = db()
+        migrations = [
+            ("posts", "send_all_groups", "INTEGER DEFAULT 0"),
+            ("posts", "wa_status",       "INTEGER DEFAULT 0"),
+            ("posts", "suspend_from",    "TEXT DEFAULT ''"),
+            ("posts", "suspend_to",      "TEXT DEFAULT ''"),
+            ("posts", "batch_title",     "TEXT DEFAULT ''"),
+            ("posts", "client_phone",    "TEXT DEFAULT ''"),
+        ]
+        for table, col, defn in migrations:
+            if USE_PG:
+                cur = conn._conn.cursor()
+                cur.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name=%s AND column_name=%s
+                """, (table, col))
+                existe = cur.fetchone() is not None
+            else:
+                existe = True  # SQLite não precisa
+            if not existe:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")
+                    conn.commit()
+                    resultados.append({"coluna": col, "status": "ADICIONADA"})
+                except Exception as e:
+                    resultados.append({"coluna": col, "status": "ERRO", "error": str(e)})
+            else:
+                resultados.append({"coluna": col, "status": "ja_existe"})
+        conn.close()
+        return jsonify({"ok": True, "migrations": resultados})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc), "traceback": traceback.format_exc()})
+
 @app.route("/api/admin/diagnostico-posts", methods=["GET"])
 @require_admin
 def api_diagnostico_posts():

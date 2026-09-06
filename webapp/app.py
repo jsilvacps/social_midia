@@ -239,6 +239,15 @@ def init_db():
             imported_at TEXT    DEFAULT TO_CHAR(NOW(),'YYYY-MM-DD"T"HH24:MI:SS'),
             UNIQUE(user_id, group_jid)
         )""")
+        # Tabela para persistir arquivos de mídia no PostgreSQL (Render /tmp é efêmero)
+        conn.execute("""CREATE TABLE IF NOT EXISTS media_files (
+            filename    TEXT    PRIMARY KEY,
+            content     BYTEA   NOT NULL,
+            mimetype    TEXT    DEFAULT 'image/jpeg',
+            is_library  INTEGER DEFAULT 0,
+            size        INTEGER DEFAULT 0,
+            uploaded_at TEXT    DEFAULT TO_CHAR(NOW(),'YYYY-MM-DD"T"HH24:MI:SS')
+        )""")
     else:
         conn.execute("""CREATE TABLE IF NOT EXISTS users (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1544,29 +1553,64 @@ def index():
 _MIME_MAP = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
              ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
 
-@app.route("/api/media/<filename>")
-def api_media(filename):
-    safe = Path(filename).name
-    path = UPLOADS_DIR / safe
+def _media_persist(filename: str, content: bytes, mimetype: str, is_library: bool = False):
+    """Salva arquivo no PostgreSQL para sobreviver a restarts do Render."""
+    if not USE_PG:
+        return
+    try:
+        conn = db()
+        conn._conn.cursor().execute(
+            """INSERT INTO media_files (filename, content, mimetype, is_library, size)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (filename) DO UPDATE
+               SET content=EXCLUDED.content, mimetype=EXCLUDED.mimetype, size=EXCLUDED.size""",
+            (filename, psycopg2.Binary(content), mimetype, int(is_library), len(content))
+        )
+        conn._conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[media_persist] erro ao salvar {filename} no PG: {e}")
+
+def _media_restore(filename: str, dest_path: Path) -> bool:
+    """Restaura arquivo do PostgreSQL para o disco se necessário."""
+    if not USE_PG or dest_path.exists():
+        return dest_path.exists()
+    try:
+        conn = db()
+        cur = conn._conn.cursor()
+        cur.execute("SELECT content, mimetype FROM media_files WHERE filename=%s", (filename,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(bytes(row[0]))
+            print(f"[media_restore] restaurado do PG: {filename}")
+            return True
+        return False
+    except Exception as e:
+        print(f"[media_restore] erro ao restaurar {filename}: {e}")
+        return False
+
+def _serve_media(path: Path, filename: str):
+    """Serve arquivo do disco, restaurando do PG se necessário."""
     if not path.exists():
-        return "Not found", 404
+        if not _media_restore(filename, path):
+            return "Not found", 404
     ext = path.suffix.lower()
     resp = send_file(str(path), mimetype=_MIME_MAP.get(ext, "application/octet-stream"),
                      conditional=True)
     resp.headers["Cache-Control"] = "public, max-age=86400"
     return resp
 
+@app.route("/api/media/<filename>")
+def api_media(filename):
+    safe = Path(filename).name
+    return _serve_media(UPLOADS_DIR / safe, safe)
+
 @app.route("/api/library/file/<filename>")
 def api_library_file(filename):
     safe = Path(filename).name
-    path = LIBRARY_DIR / safe
-    if not path.exists():
-        return "Not found", 404
-    ext = path.suffix.lower()
-    resp = send_file(str(path), mimetype=_MIME_MAP.get(ext, "application/octet-stream"),
-                     conditional=True)
-    resp.headers["Cache-Control"] = "public, max-age=86400"
-    return resp
+    return _serve_media(LIBRARY_DIR / safe, safe)
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])
@@ -1583,7 +1627,10 @@ def api_upload():
     else:
         return jsonify({"ok": False, "error": f"Formato não suportado: {ext}"})
     filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
-    f.save(str(UPLOADS_DIR / filename))
+    content = f.read()
+    (UPLOADS_DIR / filename).write_bytes(content)
+    mimetype = _MIME_MAP.get(ext, "application/octet-stream")
+    _media_persist(filename, content, mimetype, is_library=False)
     return jsonify({"ok": True, "filename": filename, "media_type": media_type})
 
 # ── Library ────────────────────────────────────────────────────────────────────
@@ -1591,6 +1638,27 @@ def api_upload():
 @require_login
 def api_library_list():
     files = []
+    if USE_PG:
+        # Lista direto do banco (fonte de verdade no Render)
+        try:
+            conn = db()
+            cur = conn._conn.cursor()
+            cur.execute("""
+                SELECT filename, mimetype, size FROM media_files
+                WHERE is_library=1 ORDER BY uploaded_at DESC
+            """)
+            rows = cur.fetchall()
+            conn.close()
+            for row in rows:
+                fname, mime, size = row
+                ext = Path(fname).suffix.lower()
+                mtype = "video" if ext in ALLOWED_VIDEO else "image"
+                files.append({"filename": fname, "media_type": mtype,
+                               "size_kb": round((size or 0) / 1024)})
+            return jsonify({"ok": True, "files": files})
+        except Exception as e:
+            print(f"[library_list] erro PG: {e}")
+    # Fallback: lista do disco
     for p in sorted(LIBRARY_DIR.iterdir(), key=lambda f: -f.stat().st_mtime):
         ext = p.suffix.lower()
         if ext in ALLOWED_IMAGE:
@@ -1637,6 +1705,8 @@ def api_library_upload():
         content = f.read()
     with open(str(dest), "wb") as fh:
         fh.write(content)
+    mimetype = _MIME_MAP.get(Path(filename).suffix.lower(), "application/octet-stream")
+    _media_persist(filename, content, mimetype, is_library=True)
     return jsonify({"ok": True, "filename": filename, "media_type": mtype,
                     "size": dest.stat().st_size})
 

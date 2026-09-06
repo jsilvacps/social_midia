@@ -1950,7 +1950,7 @@ def api_create_post():
     for i in range(total):
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         rows.append((uid, caption, filename, media_type, wa_groups_json,
-                     ig_feed, ig_stories, ig_reels, wa_status, sched, created_at,
+                     ig_feed, ig_stories, ig_reels, wa_status, sched, "pending", created_at,
                      batch_id, batch_title, client_phone, suspend_from, suspend_to, send_all_groups))
 
     try:
@@ -1958,7 +1958,7 @@ def api_create_post():
         SQL = """INSERT INTO posts
             (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
              scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)"""
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
         conn.executemany(SQL, rows)
         conn.commit()
         first = conn.execute(

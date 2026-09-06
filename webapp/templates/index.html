@@ -1239,7 +1239,10 @@ async function agendarPost() {
   btn.disabled = false;
   btn.textContent = "📅 Agendar";
 
-  if(!resp.ok) { toast("❌ " + resp.error); return; }
+  if(!resp.ok) {
+    alert("❌ Erro ao agendar:\n\n" + (resp.error || JSON.stringify(resp)));
+    return;
+  }
 
   const total = resp.count;
   const msg = total > 1

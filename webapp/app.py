@@ -1749,6 +1749,46 @@ def api_reset_stuck_posts():
     conn.commit(); conn.close()
     return jsonify({"ok": True, "resetados": n})
 
+@app.route("/api/admin/diagnostico-posts", methods=["GET"])
+@require_admin
+def api_diagnostico_posts():
+    """Diagnóstico: tenta inserir 1 post de teste e retorna erro detalhado."""
+    import traceback, uuid as _uuid
+    uid = session["user_id"]
+    batch_id = str(_uuid.uuid4())
+    now_str = datetime.now().isoformat(timespec="minutes")
+    try:
+        conn = db()
+        # Verifica colunas da tabela posts
+        if USE_PG:
+            cur = conn._conn.cursor()
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='posts' ORDER BY ordinal_position
+            """)
+            cols = [r[0] for r in cur.fetchall()]
+        else:
+            cur = conn._conn.execute("PRAGMA table_info(posts)")
+            cols = [r[1] for r in cur.fetchall()]
+
+        # Tenta inserir 1 post de teste
+        SQL = """INSERT INTO posts
+            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)"""
+        row = (uid, "TESTE_DIAG", "__test__", "image", "[]", 0, 0, 0, 0,
+               now_str, now_str, batch_id, "TESTE", "", "", "", 0)
+        conn.executemany(SQL, [row])
+        conn.commit()
+        # Remove o post de teste
+        conn.execute("DELETE FROM posts WHERE batch_id=?", (batch_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "colunas": cols, "msg": "INSERT funcionou normalmente"})
+    except Exception as exc:
+        tb = traceback.format_exc()
+        return jsonify({"ok": False, "colunas": cols if 'cols' in dir() else [], "error": str(exc), "traceback": tb})
+
 @app.route("/api/wa/debug-invite")
 @require_admin
 def api_wa_debug_invite():
@@ -1861,34 +1901,24 @@ def api_create_post():
                      ig_feed, ig_stories, ig_reels, wa_status, sched, created_at,
                      batch_id, batch_title, client_phone, suspend_from, suspend_to, send_all_groups))
 
-    def _inserir_batch():
-        try:
-            c = db()
-            if USE_PG:
-                import psycopg2.extras as _pgx
-                sql = """INSERT INTO posts
-                    (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-                     scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-                    VALUES %s"""
-                pg_rows = [r[:9] + ('pending',) + r[9:] for r in rows]
-                raw_cur = c._conn.cursor()
-                _pgx.execute_values(raw_cur, sql, pg_rows, page_size=500)
-                c._conn.commit()
-            else:
-                c.executemany("""INSERT INTO posts
-                    (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-                     scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""", rows)
-                c.commit()
-            c.close()
-            print(f"[create_post] batch {batch_id} inserido: {len(rows)} posts")
-        except Exception as e:
-            print(f"[create_post] ERRO ao inserir batch {batch_id}: {e}")
-            import traceback; traceback.print_exc()
-
-    # Retorna imediatamente e insere em background para não travar o cliente
-    threading.Thread(target=_inserir_batch, daemon=True).start()
-    return jsonify({"ok": True, "id": None, "count": total, "batch_id": batch_id})
+    try:
+        conn = db()
+        SQL = """INSERT INTO posts
+            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)"""
+        conn.executemany(SQL, rows)
+        conn.commit()
+        first = conn.execute(
+            "SELECT id FROM posts WHERE batch_id=? ORDER BY scheduled_at LIMIT 1", (batch_id,)
+        ).fetchone()
+        first_id = first["id"] if first else None
+        conn.close()
+        print(f"[create_post] batch {batch_id} ok: {len(rows)} posts")
+        return jsonify({"ok": True, "id": first_id, "count": total, "batch_id": batch_id})
+    except Exception as exc:
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "error": str(exc)})
 
 @app.route("/api/posts/<int:post_id>/send", methods=["POST"])
 @require_login

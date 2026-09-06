@@ -972,6 +972,88 @@ def _scheduler_loop():
 
 threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
 
+# ── Limpeza automática de conversas WA ────────────────────────────────────────
+def wa_clear_chat(jid: str, cfg: dict) -> bool:
+    """Limpa o histórico de uma conversa no WhatsApp via Evolution API."""
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return False
+    try:
+        r = requests.delete(
+            f"{base}/chat/clearMessage/{instance}",
+            headers=_evo_headers(cfg),
+            json={"remoteJid": jid},
+            timeout=10
+        )
+        return r.status_code < 300
+    except Exception as e:
+        print(f"[clear_chat] {jid}: {e}")
+        return False
+
+def wa_clear_all_group_chats(user_id: int) -> dict:
+    """Limpa o histórico de todos os grupos WA do usuário."""
+    cfg = load_config(user_id=user_id)
+    groups, err = wa_get_groups(cfg)
+    if not groups:
+        return {"ok": False, "error": err or "Sem grupos"}
+    total = len(groups)
+    ok_count = 0
+    for g in groups:
+        jid = g.get("id", "")
+        if jid and wa_clear_chat(jid, cfg):
+            ok_count += 1
+        time.sleep(0.2)  # evita rate limit
+    return {"ok": True, "total": total, "cleared": ok_count}
+
+def _auto_clear_loop():
+    """Job que limpa conversas de grupo a cada hora para todos os usuários com auto_clear_chats=1."""
+    while True:
+        time.sleep(3600)  # aguarda 1 hora antes do primeiro ciclo
+        try:
+            conn = db()
+            # Busca usuários que ativaram a limpeza automática
+            users = conn.execute(
+                "SELECT id FROM users WHERE plan != 'inactive'"
+            ).fetchall()
+            conn.close()
+            for u in users:
+                uid = u["id"] if hasattr(u, "__getitem__") else u[0]
+                try:
+                    cfg = load_config(user_id=uid)
+                    if cfg.get("auto_clear_chats") == "1":
+                        print(f"[auto_clear] limpando grupos do user {uid}")
+                        result = wa_clear_all_group_chats(uid)
+                        print(f"[auto_clear] user {uid}: {result}")
+                except Exception as e:
+                    print(f"[auto_clear] user {uid}: {e}")
+        except Exception as e:
+            print(f"[auto_clear] {e}")
+
+threading.Thread(target=_auto_clear_loop, daemon=True, name="auto_clear").start()
+
+# ── Rota: limpar conversas manualmente ────────────────────────────────────────
+@app.route("/api/limpar-conversas", methods=["POST"])
+@login_required
+def api_limpar_conversas():
+    uid = session["user_id"]
+    result = wa_clear_all_group_chats(uid)
+    return jsonify(result)
+
+# ── Rota: toggle limpeza automática ───────────────────────────────────────────
+@app.route("/api/config/auto-clear-chats", methods=["POST"])
+@login_required
+def api_toggle_auto_clear():
+    uid   = session["user_id"]
+    value = "1" if request.json.get("enabled") else "0"
+    conn  = db()
+    conn.execute(
+        "INSERT INTO config (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value=EXCLUDED.value",
+        (uid, "auto_clear_chats", value)
+    )
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "enabled": value == "1"})
+
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTH ROUTES
 # ══════════════════════════════════════════════════════════════════════════════

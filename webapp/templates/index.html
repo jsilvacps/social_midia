@@ -669,6 +669,24 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       </div>
     </div>
 
+    <!-- Limpeza de conversas -->
+    <div class="card">
+      <p class="card-title">🧹 Limpeza de Conversas de Grupos</p>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        Limpa o histórico de mensagens de todos os grupos no seu WhatsApp (apenas no seu dispositivo, não apaga para outros membros).
+      </p>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
+          <input type="checkbox" id="auto-clear-toggle" onchange="toggleAutoClear(this.checked)" style="width:18px;height:18px;cursor:pointer">
+          Limpar automaticamente a cada hora
+        </label>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora()" id="btn-limpar-agora">
+        🧹 Limpar agora
+      </button>
+      <span id="limpar-status" style="font-size:13px;color:var(--muted);margin-left:10px"></span>
+    </div>
+
     <!-- Instagram -->
     <div class="card">
       <p class="card-title">📸 Instagram – Meta Graph API</p>
@@ -968,6 +986,7 @@ function switchTab(name, btn) {
   try{ document.getElementById("main").scrollTo(0,0); }catch(e){}
   // Lembra a aba ativa para restaurar no reload
   try{ localStorage.setItem("activeTab", name); }catch(e){}
+  if (name === "config") loadAutoClearState();
 }
 
 // Restaura última aba ao carregar a página
@@ -1881,6 +1900,46 @@ async function waConnDisconnect() {
   await fetch("/api/wa/disconnect", {method:"POST"}).then(r=>r.json()).catch(()=>{});
   toast("✅ Desconectado");
   waConnCheck();
+}
+
+async function limparConversasAgora() {
+  if (!confirm("Limpar histórico de TODOS os grupos no seu WhatsApp? (apenas no seu dispositivo)")) return;
+  const btn = document.getElementById("btn-limpar-agora");
+  const status = document.getElementById("limpar-status");
+  btn.disabled = true;
+  status.textContent = "⏳ Limpando...";
+  try {
+    const r = await fetch("/api/limpar-conversas", {method:"POST"}).then(x=>x.json());
+    if (r.ok) {
+      status.textContent = `✅ ${r.cleared} de ${r.total} grupos limpos`;
+      toast(`✅ ${r.cleared} grupos limpos!`);
+    } else {
+      status.textContent = "❌ " + (r.error || "Erro");
+    }
+  } catch(e) {
+    status.textContent = "❌ Erro de conexão";
+  }
+  btn.disabled = false;
+}
+
+async function toggleAutoClear(enabled) {
+  const r = await fetch("/api/config/auto-clear-chats", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({enabled})
+  }).then(x=>x.json()).catch(()=>({ok:false}));
+  if (r.ok) {
+    toast(enabled ? "✅ Limpeza automática ativada (a cada hora)" : "✅ Limpeza automática desativada");
+  }
+}
+
+// Carrega estado do toggle ao abrir a aba config
+async function loadAutoClearState() {
+  try {
+    const cfg = await fetch("/api/config").then(r=>r.json());
+    const el = document.getElementById("auto-clear-toggle");
+    if (el) el.checked = cfg.auto_clear_chats === "1";
+  } catch(e) {}
 }
 
 // Inicia verificação ao entrar na aba Config

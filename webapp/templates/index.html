@@ -1454,12 +1454,13 @@ async function loadCidades(uf) {
   sel.disabled = true;
   if(!uf) { sel.innerHTML = "<option value=''>— Selecione o estado —</option>"; return; }
   try {
-    const cidades = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`).then(r=>r.json());
+    const cidades = await fetch(`/api/ibge/municipios/${uf}`).then(r=>r.json());
     sel.innerHTML = "<option value=''>— Todas as cidades —</option>" +
       cidades.map(c=>`<option value="${c.nome}" data-id="${c.id}">${c.nome}</option>`).join("");
     sel.disabled = false;
   } catch(e) {
-    sel.innerHTML = "<option value=''>Erro ao carregar</option>";
+    sel.innerHTML = "<option value=''>Erro ao carregar cidades</option>";
+    sel.disabled = false;
   }
 }
 
@@ -1534,10 +1535,10 @@ async function buscarGrupos() {
     if(ibgeId) {
       try {
         btn.textContent = "🗺️ Carregando região…";
-        const mun = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/municipios/${ibgeId}`).then(r=>r.json());
+        const mun = await fetch(`/api/ibge/municipio/${ibgeId}`).then(r=>r.json());
         const microId = mun?.microrregiao?.id;
         if(microId) {
-          const vizinhos = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/microrregioes/${microId}/municipios`).then(r=>r.json());
+          const vizinhos = await fetch(`/api/ibge/microrregiao/${microId}/municipios`).then(r=>r.json());
           cidades_regiao = vizinhos.map(c=>c.nome);  // todas as cidades da microrregião (backend limita a 60)
         }
       } catch(e) { console.warn("Erro ao buscar região:", e); }

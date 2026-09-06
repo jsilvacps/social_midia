@@ -2560,6 +2560,40 @@ def api_admin_delete_grupo_wa(gid):
     return jsonify({"ok": True})
 
 
+# ── Proxy IBGE (evita bloqueio CORS no cliente) ──────────────────────────────────
+@app.route("/api/ibge/municipios/<uf>")
+def api_ibge_municipios(uf):
+    try:
+        r = requests.get(
+            f"https://servicodados.ibge.gov.br/api/v1/localidades/estados/{uf}/municipios?orderBy=nome",
+            timeout=10
+        )
+        return Response(r.content, content_type="application/json")
+    except Exception as e:
+        return jsonify([]), 200
+
+@app.route("/api/ibge/municipio/<int:ibge_id>")
+def api_ibge_municipio(ibge_id):
+    try:
+        r = requests.get(
+            f"https://servicodados.ibge.gov.br/api/v1/localidades/municipios/{ibge_id}",
+            timeout=10
+        )
+        return Response(r.content, content_type="application/json")
+    except Exception as e:
+        return jsonify({}), 200
+
+@app.route("/api/ibge/microrregiao/<int:micro_id>/municipios")
+def api_ibge_microrregiao(micro_id):
+    try:
+        r = requests.get(
+            f"https://servicodados.ibge.gov.br/api/v1/localidades/microrregioes/{micro_id}/municipios",
+            timeout=10
+        )
+        return Response(r.content, content_type="application/json")
+    except Exception as e:
+        return jsonify([]), 200
+
 # ── Keep-alive (evita cold start no Render free) ────────────────────────────────
 @app.route("/ping")
 def ping():

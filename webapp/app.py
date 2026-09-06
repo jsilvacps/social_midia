@@ -1905,14 +1905,22 @@ def api_wa_pairing_user():
     if not phone:
         return jsonify({"ok": False, "error": "Informe o número"})
     try:
+        # Tenta endpoint v2
         r = requests.post(f"{base}/instance/pairingCode/{instance}",
                           headers={"apikey": token, "Content-Type": "application/json"},
                           json={"number": phone}, timeout=15)
+        print(f"[pairing-code user] {r.status_code} {r.text[:300]}")
+        if r.status_code == 404:
+            # Tenta endpoint alternativo
+            r = requests.post(f"{base}/instance/pairingCode",
+                              headers={"apikey": token, "Content-Type": "application/json"},
+                              json={"number": phone, "instanceName": instance}, timeout=15)
+            print(f"[pairing-code user alt] {r.status_code} {r.text[:300]}")
         d = r.json() if r.content else {}
         code = d.get("code") or d.get("pairingCode") or d.get("pairing_code") or ""
         if code:
             return jsonify({"ok": True, "code": code})
-        return jsonify({"ok": False, "error": d.get("message") or f"HTTP {r.status_code}"})
+        return jsonify({"ok": False, "error": d.get("message") or d.get("error") or f"HTTP {r.status_code}: {r.text[:200]}"})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 

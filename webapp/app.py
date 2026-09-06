@@ -118,6 +118,10 @@ class _CursorWrapper:
             yield _RowWrapper(row, desc)
 
     @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
     def lastrowid(self):
         self._cur.execute("SELECT LASTVAL()")
         return self._cur.fetchone()[0]

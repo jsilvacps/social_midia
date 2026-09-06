@@ -663,8 +663,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       </div>
 
       <div style="display:flex;gap:8px;flex-wrap:wrap" id="wa-conn-btns">
-        <button id="wa-conn-btn-qr" class="btn btn-primary btn-sm" onclick="waConnLoadQr()" style="display:none">🔄 Atualizar QR</button>
-        <button id="wa-conn-btn-pair" class="btn btn-secondary btn-sm" onclick="waConnTogglePair()" style="display:none">🔢 Usar código</button>
+        <button id="wa-conn-btn-qr" class="btn btn-primary btn-sm" onclick="waConnLoadQr()" style="display:none">📷 Escanear QR</button>
+        <button id="wa-conn-btn-pair" class="btn btn-secondary btn-sm" onclick="waConnTogglePair()" style="display:none">🔢 Código de 8 dígitos</button>
         <button id="wa-conn-btn-disc" class="btn btn-danger btn-sm" onclick="waConnDisconnect()" style="display:none">🔌 Desconectar</button>
       </div>
     </div>
@@ -1713,12 +1713,12 @@ async function waConnCheck() {
     document.getElementById("wa-conn-pair-input").style.display  = "none";
     clearInterval(waConnTimer); waConnTimer = null;
   } else {
-    st.innerHTML = "🟡 <strong>Aguardando conexão</strong> — escaneie o QR Code ou use o código de 8 dígitos";
+    st.innerHTML = "🟡 <strong>Aguardando conexão</strong> — escolha como quer conectar:";
     st.style.color = "#f59e0b";
     if (btnQr)   btnQr.style.display   = "inline-flex";
     if (btnPair) btnPair.style.display = "inline-flex";
     if (btnDisc) btnDisc.style.display = "inline-flex";
-    waConnLoadQr();
+    // NÃO carrega QR automaticamente — usuário escolhe QR ou código
     if (!waConnTimer) waConnTimer = setInterval(waConnCheck, 5000);
   }
 }

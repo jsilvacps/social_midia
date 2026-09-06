@@ -731,9 +731,16 @@ def process_post(post_id: int):
     user_id = row["user_id"] if "user_id" in row.keys() else 0
     cfg = load_config(user_id=user_id)
 
-    conn.execute("UPDATE posts SET status='sending' WHERE id=?", (post_id,))
+    # Só avança se ainda estiver 'queued' — evita duplicata se o scheduler
+    # relançar a thread por engano enquanto outra já está rodando
+    affected = conn.execute(
+        "UPDATE posts SET status='sending' WHERE id=? AND status='queued'", (post_id,)
+    ).rowcount
     conn.commit()
     conn.close()
+    if not affected:
+        print(f"[process_post] post {post_id} já não está queued, abortando")
+        return
     try:
         _process_post_inner(post_id, row, cfg)
     except Exception as exc:
@@ -861,10 +868,11 @@ def _scheduler_loop():
                 "SELECT id, suspend_from, suspend_to FROM posts WHERE status='pending' AND scheduled_at<=?",
                 (now_str + ":59",)
             ).fetchall()
-            # Posts presos como 'queued' há mais de 3 min (thread morreu antes de começar)
+            # Posts presos como 'queued' há mais de 5 min (thread nunca chegou a rodar)
+            # NÃO recupera 'sending' — esses podem estar rodando normalmente com muitos grupos
             stale = conn.execute(
                 "SELECT id, suspend_from, suspend_to FROM posts WHERE status='queued' AND scheduled_at<=?",
-                ((now_dt - __import__('datetime').timedelta(minutes=3)).strftime("%Y-%m-%dT%H:%M") + ":59",)
+                ((now_dt - __import__('datetime').timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M") + ":59",)
             ).fetchall()
             conn.close()
             for row in list(rows) + list(stale):
@@ -1680,8 +1688,9 @@ def api_wa_groups():
 def api_reset_stuck_posts():
     """Reseta posts presos em 'queued' ou 'sending' de volta para 'pending'."""
     conn = db()
+    # Só reseta 'queued' — nunca 'sending' (pode estar rodando agora)
     n = conn.execute(
-        "UPDATE posts SET status='pending' WHERE status IN ('queued','sending')"
+        "UPDATE posts SET status='pending' WHERE status='queued'"
     ).rowcount
     conn.commit(); conn.close()
     return jsonify({"ok": True, "resetados": n})

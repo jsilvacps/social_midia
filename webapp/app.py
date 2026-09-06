@@ -1851,33 +1851,34 @@ def api_create_post():
                      ig_feed, ig_stories, ig_reels, wa_status, sched, created_at,
                      batch_id, batch_title, client_phone, suspend_from, suspend_to, send_all_groups))
 
-    conn = db()
-    if USE_PG:
-        # execute_values faz um único INSERT com múltiplos VALUES — muito mais rápido
-        import psycopg2.extras as _pgx
-        sql = """INSERT INTO posts
-            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-            VALUES %s"""
-        # Adiciona 'pending' em cada tupla
-        pg_rows = [r[:9] + ('pending',) + r[9:] for r in rows]
-        raw_cur = conn._conn.cursor()
-        _pgx.execute_values(raw_cur, sql, pg_rows, page_size=200)
-        conn._conn.commit()
-    else:
-        conn.executemany("""INSERT INTO posts
-            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""", rows)
-        conn.commit()
+    def _inserir_batch():
+        try:
+            c = db()
+            if USE_PG:
+                import psycopg2.extras as _pgx
+                sql = """INSERT INTO posts
+                    (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+                     scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+                    VALUES %s"""
+                pg_rows = [r[:9] + ('pending',) + r[9:] for r in rows]
+                raw_cur = c._conn.cursor()
+                _pgx.execute_values(raw_cur, sql, pg_rows, page_size=500)
+                c._conn.commit()
+            else:
+                c.executemany("""INSERT INTO posts
+                    (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+                     scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""", rows)
+                c.commit()
+            c.close()
+            print(f"[create_post] batch {batch_id} inserido: {len(rows)} posts")
+        except Exception as e:
+            print(f"[create_post] ERRO ao inserir batch {batch_id}: {e}")
+            import traceback; traceback.print_exc()
 
-    # Busca o id do primeiro post criado
-    first = conn.execute(
-        "SELECT id FROM posts WHERE batch_id=? ORDER BY scheduled_at LIMIT 1", (batch_id,)
-    ).fetchone()
-    first_id = first["id"] if first else None
-    conn.close()
-    return jsonify({"ok": True, "id": first_id, "count": total, "batch_id": batch_id})
+    # Retorna imediatamente e insere em background para não travar o cliente
+    threading.Thread(target=_inserir_batch, daemon=True).start()
+    return jsonify({"ok": True, "id": None, "count": total, "batch_id": batch_id})
 
 @app.route("/api/posts/<int:post_id>/send", methods=["POST"])
 @require_login

@@ -1207,7 +1207,9 @@ def admin_toggle_admin(uid):
 # ── WA Instance Management (admin cria instância para o cliente) ───────────────
 def _admin_evo_cfg():
     """Retorna config do admin (EVO URL + chave global) para gerenciar instâncias."""
-    admin = db().execute("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1").fetchone()
+    conn  = db()
+    admin = conn.execute("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1").fetchone()
+    conn.close()
     if not admin:
         return None
     return load_config(user_id=admin["id"])
@@ -1438,8 +1440,8 @@ def api_admin_create_user():
         conn.close()
         # Salva phone e senha temp no config do cliente para reenvio futuro
         if phone:
-            save_config(uid, {"welcome_phone": phone, "welcome_password": password,
-                              "welcome_name": name or email.split("@")[0]})
+            save_config({"welcome_phone": phone, "welcome_password": password,
+                         "welcome_name": name or email.split("@")[0]}, user_id=uid)
     except Exception as _ie:
         conn.close()
         return jsonify({"ok": False, "error": "Email já cadastrado"}), 400
@@ -1996,9 +1998,9 @@ def api_diagnostico_posts():
         SQL = """INSERT INTO posts
             (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
              scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)"""
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
         row = (uid, "TESTE_DIAG", "__test__", "image", "[]", 0, 0, 0, 0,
-               now_str, now_str, batch_id, "TESTE", "", "", "", 0)
+               now_str, "pending", now_str, batch_id, "TESTE", "", "", "", 0)
         conn.executemany(SQL, [row])
         conn.commit()
         # Remove o post de teste

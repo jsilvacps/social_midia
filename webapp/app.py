@@ -1683,7 +1683,7 @@ def api_wa_groups():
 
     return jsonify({"ok": True, "groups": groups})
 
-@app.route("/api/admin/reset-stuck-posts", methods=["POST"])
+@app.route("/api/admin/reset-stuck-posts", methods=["GET", "POST"])
 @require_admin
 def api_reset_stuck_posts():
     """Reseta posts presos em 'queued' ou 'sending' de volta para 'pending'."""

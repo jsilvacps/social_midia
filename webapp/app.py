@@ -1840,24 +1840,29 @@ def api_create_post():
     interval_minutes = int(24 * 60 / times_per_day)
     total    = repeat_days * times_per_day
     batch_id = str(uuid.uuid4())
-    conn     = db()
     created_at     = datetime.now().isoformat(timespec="seconds")
     wa_groups_json = json.dumps(wa_groups)
-    first_id = None
 
+    # Monta todos os registros de uma vez para inserir em batch (muito mais rápido no PostgreSQL)
+    rows = []
     for i in range(total):
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
-        cur = conn.execute("""INSERT INTO posts
-            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""",
-            (uid, caption, filename, media_type, wa_groups_json,
-             ig_feed, ig_stories, ig_reels, wa_status, sched, created_at, batch_id, batch_title,
-             client_phone, suspend_from, suspend_to, send_all_groups))
-        if i == 0:
-            first_id = cur.lastrowid
+        rows.append((uid, caption, filename, media_type, wa_groups_json,
+                     ig_feed, ig_stories, ig_reels, wa_status, sched, created_at,
+                     batch_id, batch_title, client_phone, suspend_from, suspend_to, send_all_groups))
 
+    conn = db()
+    conn.executemany("""INSERT INTO posts
+        (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+         scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""", rows)
     conn.commit()
+
+    # Busca o id do primeiro post criado
+    first = conn.execute(
+        "SELECT id FROM posts WHERE batch_id=? ORDER BY scheduled_at LIMIT 1", (batch_id,)
+    ).fetchone()
+    first_id = first["id"] if first else None
     conn.close()
     return jsonify({"ok": True, "id": first_id, "count": total, "batch_id": batch_id})
 

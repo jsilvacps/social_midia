@@ -253,8 +253,8 @@ document.getElementById("login-form").addEventListener("submit", async function(
   document.getElementById("login-btn-text").style.display = "none";
   document.getElementById("login-spinner").style.display  = "block";
 
-  // Salva credenciais no gerenciador do navegador (pede biometria no futuro)
-  await salvarCredenciais(email, password);
+  // Salva credenciais no gerenciador do navegador (sem bloquear o login)
+  salvarCredenciais(email, password); // não aguarda — evita travar o fluxo
 
   // Submete via fetch para incluir o campo remember
   const form = new FormData();

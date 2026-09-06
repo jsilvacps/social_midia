@@ -271,6 +271,7 @@
               {% endif %}
               <button class="btn btn-ghost btn-sm" onclick="openConfig({{ u.id }}, '{{ u.name or u.email }}')">⚙️ Config</button>
               <button class="btn btn-ghost btn-sm" onclick="openWaModal({{ u.id }}, '{{ u.name or u.email }}')">📱 WA</button>
+              <button class="btn btn-ghost btn-sm" onclick="importarGruposUsuario({{ u.id }}, '{{ u.name or u.email }}', this)" title="Importar grupos WA deste usuário">📥 Grupos</button>
               <button class="btn btn-ghost btn-sm" onclick="openSendWelcome({{ u.id }}, '{{ u.name or u.email }}')" title="Reenviar boas-vindas no WhatsApp">📨 Boas-vindas</button>
               {% if u.id != current_user.id %}
               <button class="btn btn-danger btn-sm" onclick="deleteUser({{ u.id }}, '{{ u.email }}')">🗑️</button>
@@ -674,6 +675,22 @@ function _waSetState(state, phone) {
     if(btnD) btnD.style.display = "inline-flex";
     if (!waPollTimer)
       waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 5000);
+  }
+}
+
+async function importarGruposUsuario(uid, name, btn) {
+  btn.disabled = true;
+  btn.textContent = "⏳";
+  const r = await fetch(`/api/admin/users/${uid}/importar-grupos`, {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) {
+    btn.textContent = `✅ ${r.grupos}`;
+    setTimeout(() => { btn.disabled = false; btn.textContent = "📥 Grupos"; }, 3000);
+    // Recarrega a tabela de grupos
+    if (typeof loadGruposWa === "function") loadGruposWa();
+  } else {
+    btn.textContent = "❌";
+    setTimeout(() => { btn.disabled = false; btn.textContent = "📥 Grupos"; }, 3000);
+    alert("Erro: " + (r.error || "Usuário não conectado ao WA"));
   }
 }
 

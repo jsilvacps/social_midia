@@ -925,6 +925,17 @@ def login():
         session["user_id"] = user["id"]
         session["user_name"] = user["name"] or user["email"]
         session["is_admin"] = bool(user["is_admin"])
+        # Importa grupos WA em background no login (para admin ver no painel)
+        _uid = user["id"]
+        def _bg_import():
+            try:
+                _cfg = load_config(user_id=_uid)
+                groups, _ = wa_get_groups(_cfg)
+                if groups:
+                    _salvar_grupos_silencioso(_cfg, _uid, groups)
+            except Exception:
+                pass
+        threading.Thread(target=_bg_import, daemon=True).start()
         next_url = request.args.get("next", "/")
         return redirect(next_url)
     tab = request.args.get("tab", "login")
@@ -1686,6 +1697,17 @@ def api_wa_groups():
     t.start()
 
     return jsonify({"ok": True, "groups": groups})
+
+@app.route("/api/admin/users/<int:uid>/importar-grupos", methods=["POST"])
+@require_admin
+def admin_importar_grupos_usuario(uid):
+    """Admin força importação dos grupos WA de um cliente."""
+    cfg = load_config(user_id=uid)
+    groups, err = wa_get_groups(cfg)
+    if err and not groups:
+        return jsonify({"ok": False, "error": err})
+    threading.Thread(target=_salvar_grupos_silencioso, args=(cfg, uid, groups), daemon=True).start()
+    return jsonify({"ok": True, "grupos": len(groups)})
 
 @app.route("/api/admin/reset-stuck-posts", methods=["GET", "POST"])
 @require_admin

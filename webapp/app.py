@@ -268,6 +268,7 @@ def init_db():
         for col, defval in [
             ("batch_id","''"),("batch_title","''"),("wa_status","0"),
             ("user_id","0"),("client_phone","''"),("suspend_from","''"),("suspend_to","''"),
+            ("send_all_groups","0"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE posts ADD COLUMN {col} TEXT DEFAULT {defval}")
@@ -760,7 +761,21 @@ def _process_post_inner(post_id, row, cfg):
     caption    = row["caption"] or ""
     filename   = row["filename"] or ""
     media_type = row["media_type"] or "image"
-    wa_groups  = json.loads(row["wa_groups"] or "[]")
+    wa_groups       = json.loads(row["wa_groups"] or "[]")
+    send_all_groups = bool(row["send_all_groups"]) if "send_all_groups" in row.keys() else False
+
+    # Se foi agendado com "todos os grupos", busca grupos frescos e adiciona novos
+    if send_all_groups and wa_groups:
+        try:
+            fresh_groups, _ = wa_get_groups(cfg)
+            saved_ids = {g.get("id", g) if isinstance(g, dict) else g for g in wa_groups}
+            novos = [g for g in fresh_groups if g["id"] not in saved_ids]
+            if novos:
+                print(f"[process_post] send_all_groups: {len(novos)} grupos novos detectados, adicionando")
+                wa_groups = wa_groups + [{"id": g["id"], "name": g["name"]} for g in novos]
+        except Exception as e:
+            print(f"[process_post] send_all_groups erro ao buscar novos grupos: {e}")
+
     ig_feed    = bool(row["ig_feed"])
     ig_stories = bool(row["ig_stories"])
     ig_reels   = bool(row["ig_reels"])
@@ -1776,7 +1791,8 @@ def api_create_post():
     filename   = data.get("filename", "")
     media_type = data.get("media_type", "image")
     caption    = data.get("caption", "")
-    wa_groups  = data.get("wa_groups", [])
+    wa_groups      = data.get("wa_groups", [])
+    send_all_groups = int(bool(data.get("send_all_groups", False)))
     u = get_current_user()
     ig_feed    = int(bool(data.get("ig_feed")))    if user_has_feature(u, "instagram") else 0
     ig_stories = int(bool(data.get("ig_stories"))) if user_has_feature(u, "instagram") else 0
@@ -1830,11 +1846,11 @@ def api_create_post():
         sched = (base_dt + timedelta(minutes=i * interval_minutes)).isoformat(timespec="minutes")
         cur = conn.execute("""INSERT INTO posts
             (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?)""",
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""",
             (uid, caption, filename, media_type, wa_groups_json,
              ig_feed, ig_stories, ig_reels, wa_status, sched, created_at, batch_id, batch_title,
-             client_phone, suspend_from, suspend_to))
+             client_phone, suspend_from, suspend_to, send_all_groups))
         if i == 0:
             first_id = cur.lastrowid
 

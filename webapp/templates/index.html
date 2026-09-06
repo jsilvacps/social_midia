@@ -738,6 +738,18 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
   <!-- ══ Tab: Grupos ══════════════════════════════════════════ -->
   <section class="tab" id="tab-grupos">
+
+    <!-- Importar grupos do WA -->
+    <div class="card" style="background:rgba(0,229,160,.05);border-color:rgba(0,229,160,.2)">
+      <p class="card-title">📲 Meus grupos do WhatsApp</p>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Importe os grupos que você já participa no WhatsApp — eles ficam disponíveis para disparo.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="btn-importar-wa" class="btn btn-success btn-sm" onclick="importarGruposWa()">📲 Importar meus grupos</button>
+        <span id="importar-wa-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="meus-grupos-lista" style="margin-top:12px;display:none;max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+
     <div class="card">
       <p class="card-title">🔍 Buscar Grupos de WhatsApp</p>
       <div class="field">
@@ -1681,6 +1693,37 @@ async function testIg() {
   const r = await fetch("/api/config/ig-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}).then(r=>r.json());
   if(r.ok){ el.style.borderLeftColor="var(--success)"; el.textContent=`✅ Conta: @${r.username}`; }
   else    { el.style.borderLeftColor="var(--danger)";  el.textContent=`❌ ${r.error}`; }
+}
+
+// ══ Importar grupos WA ══════════════════════════════════
+async function importarGruposWa() {
+  const btn = document.getElementById("btn-importar-wa");
+  const status = document.getElementById("importar-wa-status");
+  btn.disabled = true; btn.textContent = "⏳ Importando…";
+  status.textContent = "Buscando seus grupos no WhatsApp…";
+  const r = await fetch("/api/grupos/importar-wa", {method:"POST"}).then(r=>r.json()).catch(()=>({ok:false}));
+  btn.disabled = false; btn.textContent = "📲 Importar meus grupos";
+  if (r.ok) {
+    status.textContent = `✅ ${r.novos} novos · ${r.total} grupos no total`;
+    status.style.color = "var(--green)";
+    carregarMeusGrupos();
+  } else {
+    status.textContent = "❌ " + (r.error || "Erro ao importar");
+    status.style.color = "var(--danger)";
+  }
+}
+
+async function carregarMeusGrupos() {
+  const lista = document.getElementById("meus-grupos-lista");
+  if (!lista) return;
+  const r = await fetch("/api/grupos/meus-wa").then(r=>r.json()).catch(()=>[]);
+  if (!r.length) { lista.style.display = "none"; return; }
+  lista.style.display = "flex";
+  lista.innerHTML = r.map(g => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;font-size:12px">
+      <span style="color:var(--text);font-weight:500">📱 ${g.name || g.group_jid}</span>
+      ${g.invite_link ? `<a href="${g.invite_link}" target="_blank" style="color:var(--green);text-decoration:none;font-size:11px">🔗 Link</a>` : '<span style="color:var(--muted);font-size:11px">sem link</span>'}
+    </div>`).join("");
 }
 
 // ══ WA Connect (cliente) ════════════════════════════════

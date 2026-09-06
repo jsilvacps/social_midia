@@ -855,12 +855,22 @@ def _scheduler_loop():
                 st = row["suspend_to"]   or ""
                 if _in_suspend_window(sf, st, now_hm):
                     print(f"[scheduler] post {row['id']} suspenso ({now_hm} em {sf}–{st})")
-                    # Marca como suspenso para não reprocessar
                     c = db()
                     c.execute("UPDATE posts SET status='suspended' WHERE id=?", (row["id"],))
                     c.commit(); c.close()
                 else:
-                    threading.Thread(target=process_post, args=(row["id"],), daemon=True).start()
+                    # Marca como 'queued' atomicamente antes de lançar a thread
+                    # Isso evita que o próximo loop pegue o mesmo post novamente
+                    c = db()
+                    affected = c.execute(
+                        "UPDATE posts SET status='queued' WHERE id=? AND status='pending'",
+                        (row["id"],)
+                    ).rowcount
+                    c.commit(); c.close()
+                    if affected:  # Só lança thread se conseguiu marcar (evita duplicatas)
+                        threading.Thread(target=process_post, args=(row["id"],), daemon=True).start()
+                    else:
+                        print(f"[scheduler] post {row['id']} já marcado por outra execução, pulando")
         except Exception as exc:
             print(f"[scheduler] {exc}")
         time.sleep(30)

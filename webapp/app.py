@@ -1659,6 +1659,29 @@ def api_wa_groups():
 
     return jsonify({"ok": True, "groups": groups})
 
+@app.route("/api/wa/debug-invite")
+@require_admin
+def api_wa_debug_invite():
+    """Debug: testa busca de invite link de um grupo. Retorna raw da Evolution API."""
+    cfg = load_config()
+    base     = (cfg.get("evo_url") or "").rstrip("/")
+    instance = cfg.get("evo_instance") or ""
+    headers  = _evo_headers(cfg)
+    groups, err = wa_get_groups(cfg)
+    if err or not groups:
+        return jsonify({"ok": False, "error": err or "Sem grupos"})
+    results = []
+    for g in groups[:5]:  # Testa só os 5 primeiros
+        jid = g["id"]
+        try:
+            r = requests.get(f"{base}/group/inviteCode/{instance}?groupJid={jid}",
+                             headers=headers, timeout=8)
+            results.append({"group": g["name"], "jid": jid,
+                            "http": r.status_code, "raw": r.text[:300]})
+        except Exception as e:
+            results.append({"group": g["name"], "jid": jid, "error": str(e)})
+    return jsonify({"ok": True, "base": base, "instance": instance, "results": results})
+
 @app.route("/api/wa/test-text")
 @require_login
 def api_wa_test_text():

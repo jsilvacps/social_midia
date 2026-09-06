@@ -966,7 +966,28 @@ function switchTab(name, btn) {
       b.classList.add("active");
   });
   try{ document.getElementById("main").scrollTo(0,0); }catch(e){}
+  // Lembra a aba ativa para restaurar no reload
+  try{ localStorage.setItem("activeTab", name); }catch(e){}
 }
+
+// Restaura última aba ao carregar a página
+(function() {
+  try {
+    const saved = localStorage.getItem("activeTab");
+    if (saved && saved !== "criar") {
+      const btn = [...document.querySelectorAll("nav button")].find(
+        b => b.getAttribute("onclick") && b.getAttribute("onclick").includes(`'${saved}'`)
+      );
+      if (btn) {
+        switchTab(saved, btn);
+        // Carrega dados da aba restaurada
+        if (saved === "posts")  loadPosts();
+        if (saved === "midia")  loadLibrary();
+        if (saved === "grupos") carregarMeusGrupos && carregarMeusGrupos();
+      }
+    }
+  } catch(e) {}
+})();
 
 // ══ File Upload ══════════════════════════════════════════
 function dragOver(e) {

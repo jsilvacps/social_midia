@@ -1852,11 +1852,24 @@ def api_create_post():
                      batch_id, batch_title, client_phone, suspend_from, suspend_to, send_all_groups))
 
     conn = db()
-    conn.executemany("""INSERT INTO posts
-        (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
-         scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
-        VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""", rows)
-    conn.commit()
+    if USE_PG:
+        # execute_values faz um único INSERT com múltiplos VALUES — muito mais rápido
+        import psycopg2.extras as _pgx
+        sql = """INSERT INTO posts
+            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+            VALUES %s"""
+        # Adiciona 'pending' em cada tupla
+        pg_rows = [r[:9] + ('pending',) + r[9:] for r in rows]
+        raw_cur = conn._conn.cursor()
+        _pgx.execute_values(raw_cur, sql, pg_rows, page_size=200)
+        conn._conn.commit()
+    else:
+        conn.executemany("""INSERT INTO posts
+            (user_id,caption,filename,media_type,wa_groups,ig_feed,ig_stories,ig_reels,wa_status,
+             scheduled_at,status,created_at,batch_id,batch_title,client_phone,suspend_from,suspend_to,send_all_groups)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)""", rows)
+        conn.commit()
 
     # Busca o id do primeiro post criado
     first = conn.execute(

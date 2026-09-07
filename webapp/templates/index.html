@@ -2416,8 +2416,7 @@ function dismissPwaBanner() {
   </div>
 </div>
 
-{% if show_welcome %}
-<!-- Modal Editar Lote -->
+<!-- Modal Editar Lote — FORA de qualquer if -->
 <div id="edit-batch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1200;align-items:center;justify-content:center">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:420px;max-width:95vw;display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -2455,6 +2454,7 @@ function dismissPwaBanner() {
   </div>
 </div>
 
+{% if show_welcome %}
 <!-- Modal Boas-vindas (primeiro acesso) -->
 <div id="welcome-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px">
   <div style="background:#0f1829;border:1px solid #1e2d4a;border-radius:20px;width:520px;max-width:100%;max-height:90vh;overflow-y:auto">

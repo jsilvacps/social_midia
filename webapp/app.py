@@ -1693,10 +1693,10 @@ def index():
 _MIME_MAP = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
              ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
 
-def _media_persist(filename: str, content: bytes, mimetype: str, is_library: bool = False):
-    """Salva arquivo no PostgreSQL para sobreviver a restarts do Render."""
+def _media_persist(filename: str, content: bytes, mimetype: str, is_library: bool = False) -> bool:
+    """Salva arquivo no PostgreSQL para sobreviver a restarts do Render. Retorna True se ok."""
     if not USE_PG:
-        return
+        return True  # sem PG, disco local é suficiente
     try:
         conn = db()
         conn._conn.cursor().execute(
@@ -1708,8 +1708,11 @@ def _media_persist(filename: str, content: bytes, mimetype: str, is_library: boo
         )
         conn._conn.commit()
         conn.close()
+        print(f"[media_persist] salvo no PG: {filename} ({len(content)} bytes)")
+        return True
     except Exception as e:
-        print(f"[media_persist] erro ao salvar {filename} no PG: {e}")
+        print(f"[media_persist] ERRO ao salvar {filename} no PG: {e}")
+        return False
 
 def _media_restore(filename: str, dest_path: Path) -> bool:
     """Restaura arquivo do PostgreSQL para o disco se necessário."""
@@ -1752,6 +1755,31 @@ def api_library_file(filename):
     safe = Path(filename).name
     return _serve_media(LIBRARY_DIR / safe, safe)
 
+# ── Diagnóstico de mídia ───────────────────────────────────────────────────────
+@app.route("/api/admin/diagnostico-midia", methods=["GET"])
+@require_login
+def api_diagnostico_midia():
+    """Verifica quantos arquivos estão salvos no PostgreSQL."""
+    result = {"use_pg": USE_PG, "pg_count": None, "pg_error": None,
+              "disco_uploads": 0, "disco_library": 0}
+    try:
+        result["disco_uploads"]  = sum(1 for _ in UPLOADS_DIR.iterdir() if _.is_file())
+        result["disco_library"]  = sum(1 for _ in LIBRARY_DIR.iterdir() if _.is_file())
+    except Exception as e:
+        result["disco_error"] = str(e)
+    if USE_PG:
+        try:
+            conn = db()
+            cur  = conn._conn.cursor()
+            cur.execute("SELECT COUNT(*), SUM(size) FROM media_files")
+            row = cur.fetchone()
+            conn.close()
+            result["pg_count"]      = row[0]
+            result["pg_total_bytes"] = row[1]
+        except Exception as e:
+            result["pg_error"] = str(e)
+    return jsonify(result)
+
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])
 @require_login
@@ -1770,7 +1798,9 @@ def api_upload():
     content = f.read()
     (UPLOADS_DIR / filename).write_bytes(content)
     mimetype = _MIME_MAP.get(ext, "application/octet-stream")
-    _media_persist(filename, content, mimetype, is_library=False)
+    pg_ok = _media_persist(filename, content, mimetype, is_library=False)
+    if USE_PG and not pg_ok:
+        return jsonify({"ok": False, "error": "Falha ao salvar mídia no banco de dados. Tente novamente."})
     return jsonify({"ok": True, "filename": filename, "media_type": media_type})
 
 # ── Library ────────────────────────────────────────────────────────────────────

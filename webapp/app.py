@@ -535,16 +535,30 @@ def _media_url(filename: str, cfg) -> str:
         return f"{app_url}/api/library/file/{lib_filename}"
     return f"{app_url}/api/media/{filename}"
 
+def _read_media_bytes(filepath: Path, db_filename: str) -> bytes | None:
+    """Lê o arquivo do disco ou restaura do PostgreSQL. Retorna bytes ou None."""
+    if filepath.exists():
+        return filepath.read_bytes()
+    # Tenta restaurar do PG
+    fname = db_filename or filepath.name
+    if _media_restore(fname, filepath):
+        return filepath.read_bytes()
+    return None
+
 def wa_send_image(group_id, caption, filepath, cfg, db_filename=""):
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        url = _media_url(db_filename or filepath.name, cfg)
+        content = _read_media_bytes(filepath, db_filename)
+        if content is None:
+            return False, "Arquivo de mídia não encontrado (verifique se foi enviado ao banco)"
+        b64 = base64.b64encode(content).decode()
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
-                  "mimetype": "image/jpeg", "caption": caption, "media": url},
+                  "mimetype": "image/jpeg", "caption": caption,
+                  "media": f"data:image/jpeg;base64,{b64}"},
             timeout=120
         )
         if r.status_code in (200, 201):
@@ -557,12 +571,16 @@ def wa_send_video(group_id, caption, filepath, cfg, db_filename=""):
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     try:
-        url = _media_url(db_filename or filepath.name, cfg)
+        content = _read_media_bytes(filepath, db_filename)
+        if content is None:
+            return False, "Arquivo de mídia não encontrado (verifique se foi enviado ao banco)"
+        b64 = base64.b64encode(content).decode()
         r = requests.post(
             f"{base}/message/sendMedia/{instance}",
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "video",
-                  "mimetype": "video/mp4", "caption": caption, "media": url},
+                  "mimetype": "video/mp4", "caption": caption,
+                  "media": f"data:video/mp4;base64,{b64}"},
             timeout=180
         )
         if r.status_code in (200, 201):
@@ -595,16 +613,16 @@ def wa_send(group_id, caption, filepath, media_type, cfg, db_filename=""):
 def wa_send_status(caption, filepath, media_type, cfg, db_filename=""):
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
-    app_url  = (cfg.get("app_url") or "https://social-midia.onrender.com").rstrip("/")
-    if db_filename:
-        media_url = f"{app_url}/api/library/file/{db_filename}"
-    elif filepath:
-        media_url = f"{app_url}/api/media/{filepath.name}"
-    else:
-        return False, "Sem arquivo de mídia"
-    stype = "video" if media_type == "video" else "image"
+    # Lê o arquivo como base64 (evita dependência de URL acessível externamente)
+    content = _read_media_bytes(filepath, db_filename) if filepath else None
+    if not content:
+        return False, "Arquivo de mídia não encontrado"
+    b64      = base64.b64encode(content).decode()
+    stype    = "video" if media_type == "video" else "image"
+    mime     = "video/mp4" if stype == "video" else "image/jpeg"
+    media_b64 = f"data:{mime};base64,{b64}"
     # Tenta endpoint sendStatus (Evolution API v2)
-    body = {"type": stype, "content": media_url, "caption": caption, "allContacts": True}
+    body = {"type": stype, "content": media_b64, "caption": caption, "allContacts": True}
     try:
         r = requests.post(
             f"{base}/message/sendStatus/{instance}",
@@ -619,9 +637,9 @@ def wa_send_status(caption, filepath, media_type, cfg, db_filename=""):
         body2 = {
             "number": "status@broadcast",
             "mediatype": stype,
-            "mimetype": "video/mp4" if stype == "video" else "image/jpeg",
+            "mimetype": mime,
             "caption": caption,
-            "media": media_url,
+            "media": media_b64,
         }
         r2 = requests.post(
             f"{base}/message/sendMedia/{instance}",

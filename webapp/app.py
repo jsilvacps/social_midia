@@ -2254,15 +2254,31 @@ def api_edit_batch(batch_id):
             conn.close()
             return jsonify({"ok": False, "error": f"Horário inválido: {e}"})
 
+    new_filename   = data.get("filename")    # troca de mídia
+    new_media_type = data.get("media_type")
+
     if updates:
         for new_sched, pid in updates:
-            if new_caption is not None:
+            if new_caption is not None and new_filename is not None:
+                conn.execute("UPDATE posts SET scheduled_at=?, caption=?, filename=?, media_type=? WHERE id=?",
+                             (new_sched, new_caption, new_filename, new_media_type or "image", pid))
+            elif new_caption is not None:
                 conn.execute("UPDATE posts SET scheduled_at=?, caption=? WHERE id=?", (new_sched, new_caption, pid))
+            elif new_filename is not None:
+                conn.execute("UPDATE posts SET scheduled_at=?, filename=?, media_type=? WHERE id=?",
+                             (new_sched, new_filename, new_media_type or "image", pid))
             else:
                 conn.execute("UPDATE posts SET scheduled_at=? WHERE id=?", (new_sched, pid))
-    elif new_caption is not None:
-        conn.execute("UPDATE posts SET caption=? WHERE batch_id=? AND user_id=? AND status='pending'",
-                     (new_caption, batch_id, uid))
+    else:
+        if new_caption is not None and new_filename is not None:
+            conn.execute("UPDATE posts SET caption=?, filename=?, media_type=? WHERE batch_id=? AND user_id=? AND status='pending'",
+                         (new_caption, new_filename, new_media_type or "image", batch_id, uid))
+        elif new_caption is not None:
+            conn.execute("UPDATE posts SET caption=? WHERE batch_id=? AND user_id=? AND status='pending'",
+                         (new_caption, batch_id, uid))
+        elif new_filename is not None:
+            conn.execute("UPDATE posts SET filename=?, media_type=? WHERE batch_id=? AND user_id=? AND status='pending'",
+                         (new_filename, new_media_type or "image", batch_id, uid))
 
     conn.commit()
     conn.close()

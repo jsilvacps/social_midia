@@ -1661,6 +1661,11 @@ function abrirEditarLote(batchId, caption, scheduledAt) {
   const dt = scheduledAt ? scheduledAt.substring(0,16) : "";
   document.getElementById("edit-batch-dt").value = dt;
   document.getElementById("edit-batch-msg").style.display = "none";
+  // Reset campo de mídia
+  const fileInput = document.getElementById("edit-batch-file");
+  if (fileInput) fileInput.value = "";
+  const fnLabel = document.getElementById("edit-batch-file-name");
+  if (fnLabel) fnLabel.textContent = "Nenhum arquivo selecionado";
   const modal = document.getElementById("edit-batch-modal");
   modal.style.display = "flex";
 }
@@ -1668,23 +1673,54 @@ function fecharEditarLote() {
   document.getElementById("edit-batch-modal").style.display = "none";
   _editBatchId = null;
 }
+function onEditBatchFileChange(input) {
+  const fnLabel = document.getElementById("edit-batch-file-name");
+  fnLabel.textContent = input.files[0] ? input.files[0].name : "Nenhum arquivo selecionado";
+}
 async function salvarEdicaoLote() {
   if (!_editBatchId) return;
   const caption     = document.getElementById("edit-batch-caption").value;
   const scheduledAt = document.getElementById("edit-batch-dt").value;
+  const fileInput   = document.getElementById("edit-batch-file");
+  const file        = fileInput && fileInput.files[0];
   const btn = document.getElementById("edit-batch-save-btn");
   btn.disabled = true; btn.textContent = "⏳ Salvando…";
+  const msg = document.getElementById("edit-batch-msg");
+
+  let newFilename   = null;
+  let newMediaType  = null;
+
+  // Se há arquivo novo, faz upload primeiro
+  if (file) {
+    btn.textContent = "⏳ Enviando mídia…";
+    const fd = new FormData();
+    fd.append("file", file);
+    const up = await fetch("/api/upload", { method: "POST", body: fd })
+                     .then(r=>r.json()).catch(()=>({ok:false,error:"Erro de rede"}));
+    if (!up.ok) {
+      btn.disabled = false; btn.textContent = "💾 Salvar alterações";
+      msg.style.display = "block"; msg.style.color = "var(--danger)";
+      msg.textContent = "❌ Falha no upload: " + (up.error || "Erro desconhecido");
+      return;
+    }
+    newFilename  = up.filename;
+    newMediaType = file.type.startsWith("video") ? "video" : "image";
+    btn.textContent = "⏳ Salvando…";
+  }
+
+  const body = { caption, scheduled_at: scheduledAt || undefined };
+  if (newFilename) { body.filename = newFilename; body.media_type = newMediaType; }
+
   const r = await fetch(`/api/posts/batch/${_editBatchId}`, {
     method: "PATCH",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ caption, scheduled_at: scheduledAt || undefined })
+    body: JSON.stringify(body)
   }).then(r=>r.json()).catch(()=>({ok:false,error:"Erro de rede"}));
   btn.disabled = false; btn.textContent = "💾 Salvar alterações";
-  const msg = document.getElementById("edit-batch-msg");
   if (r.ok) {
     msg.style.display = "block";
     msg.style.color = "var(--green)";
-    msg.textContent = `✅ ${r.editados} post(s) atualizado(s)`;
+    msg.textContent = `✅ ${r.editados} post(s) atualizado(s)${newFilename ? " (mídia trocada)" : ""}`;
     setTimeout(() => { fecharEditarLote(); loadPosts(); }, 1500);
   } else {
     msg.style.display = "block";
@@ -2174,6 +2210,18 @@ function dismissPwaBanner() {
       <input type="datetime-local" id="edit-batch-dt"
         style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none">
       <span style="font-size:11px;color:var(--muted)">O intervalo entre os disparos do lote é mantido automaticamente.</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Trocar mídia (imagem/vídeo)</label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="cursor:pointer;background:var(--bg);border:1px dashed var(--border);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;transition:border-color .2s"
+               id="edit-batch-media-label" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+          📎 Selecionar arquivo
+          <input type="file" id="edit-batch-file" accept="image/*,video/*" style="display:none" onchange="onEditBatchFileChange(this)">
+        </label>
+        <span id="edit-batch-file-name" style="font-size:12px;color:var(--muted)">Nenhum arquivo selecionado</span>
+      </div>
+      <span style="font-size:11px;color:var(--muted)">Deixe em branco para manter a mídia atual. Imagem ou vídeo (max 50 MB).</span>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="fecharEditarLote()" class="btn btn-ghost btn-sm">Cancelar</button>

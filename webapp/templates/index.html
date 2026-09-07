@@ -2211,41 +2211,52 @@ async function salvarTextoRapido(title, content) {
 }
 
 // Modal criar/editar
+function _getTextoModal() {
+  // Garante que o modal já foi renderizado no DOM
+  return document.getElementById("texto-modal");
+}
 function abrirNovoTexto() {
   _textoEditId = null;
-  document.getElementById("texto-modal-title").textContent = "📝 Novo texto pronto";
-  document.getElementById("texto-modal-titulo").value = "";
-  document.getElementById("texto-modal-content").value = "";
-  document.getElementById("texto-modal-msg").style.display = "none";
-  document.getElementById("texto-modal").style.display = "flex";
+  const m = _getTextoModal();
+  if (!m) { console.error("Modal texto-modal não encontrado"); return; }
+  m.querySelector("#texto-modal-title").textContent = "📝 Novo texto pronto";
+  m.querySelector("#texto-modal-titulo").value = "";
+  m.querySelector("#texto-modal-content").value = "";
+  m.querySelector("#texto-modal-msg").style.display = "none";
+  m.style.display = "flex";
 }
 
 function editarTexto(id) {
   const t = _textosCache.find(x => x.id == id);
   if (!t) return;
   _textoEditId = id;
-  document.getElementById("texto-modal-title").textContent = "✏️ Editar texto pronto";
-  document.getElementById("texto-modal-titulo").value = t.title;
-  document.getElementById("texto-modal-content").value = t.content;
-  document.getElementById("texto-modal-msg").style.display = "none";
-  document.getElementById("texto-modal").style.display = "flex";
+  const m = _getTextoModal();
+  if (!m) return;
+  m.querySelector("#texto-modal-title").textContent = "✏️ Editar texto pronto";
+  m.querySelector("#texto-modal-titulo").value = t.title;
+  m.querySelector("#texto-modal-content").value = t.content;
+  m.querySelector("#texto-modal-msg").style.display = "none";
+  m.style.display = "flex";
 }
 
 function fecharTextoModal() {
-  document.getElementById("texto-modal").style.display = "none";
+  const m = _getTextoModal();
+  if (m) m.style.display = "none";
   _textoEditId = null;
 }
 
 async function salvarTextoModal() {
-  const title   = document.getElementById("texto-modal-titulo").value.trim();
-  const content = document.getElementById("texto-modal-content").value.trim();
+  const m = _getTextoModal();
+  if (!m) return;
+  const title   = m.querySelector("#texto-modal-titulo").value.trim();
+  const content = m.querySelector("#texto-modal-content").value.trim();
+  const msg     = m.querySelector("#texto-modal-msg");
   if (!title || !content) {
-    const msg = document.getElementById("texto-modal-msg");
     msg.style.display = "block"; msg.style.color = "var(--danger)";
     msg.textContent = "❌ Preencha título e texto";
     return;
   }
-  const btn = document.getElementById("texto-modal-save-btn");
+  const btn = m.querySelector("#texto-modal-save-btn");
   btn.disabled = true; btn.textContent = "⏳ Salvando…";
 
   const url    = _textoEditId ? `/api/textos-prontos/${_textoEditId}` : "/api/textos-prontos";
@@ -2257,7 +2268,6 @@ async function salvarTextoModal() {
   }).then(r=>r.json()).catch(()=>({ok:false, error:"Erro de rede"}));
 
   btn.disabled = false; btn.textContent = "💾 Salvar";
-  const msg = document.getElementById("texto-modal-msg");
   if (r.ok) {
     await loadTextosProntos();
     msg.style.display = "block"; msg.style.color = "var(--green)";
@@ -2280,14 +2290,17 @@ function escHtml(s) {
   return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-// Fecha modal ao clicar fora
-document.getElementById("texto-modal")?.addEventListener("click", function(e) {
-  if (e.target === this) fecharTextoModal();
-});
-
 // Guarda valor anterior do caption ao focar (para detectar mudança)
 document.getElementById("caption")?.addEventListener("focus", function() {
   _captionAntes = this.value;
+});
+
+// Registra listeners do modal texto após DOM completo
+document.addEventListener("DOMContentLoaded", function() {
+  const m = document.getElementById("texto-modal");
+  if (m) m.addEventListener("click", function(e) {
+    if (e.target === this) fecharTextoModal();
+  });
 });
 </script>
 

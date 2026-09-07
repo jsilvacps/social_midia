@@ -431,6 +431,8 @@ def require_admin(f):
     def wrapper(*args, **kwargs):
         u = get_current_user()
         if not u or not u["is_admin"]:
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "Acesso negado"}), 403
             return redirect("/login")
         return f(*args, **kwargs)
     return wrapper
@@ -1763,11 +1765,13 @@ def _serve_media(path: Path, filename: str):
     return resp
 
 @app.route("/api/media/<filename>")
+@require_login
 def api_media(filename):
     safe = Path(filename).name
     return _serve_media(UPLOADS_DIR / safe, safe)
 
 @app.route("/api/library/file/<filename>")
+@require_login
 def api_library_file(filename):
     safe = Path(filename).name
     return _serve_media(LIBRARY_DIR / safe, safe)

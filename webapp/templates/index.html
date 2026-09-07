@@ -2390,6 +2390,32 @@ function dismissPwaBanner() {
 }
 </script>
 
+<!-- Modal Texto Pronto (criar/editar) — FORA de qualquer if para sempre renderizar -->
+<div id="texto-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1300;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:480px;max-width:95vw;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong id="texto-modal-title" style="font-size:16px">📝 Novo texto pronto</strong>
+      <button onclick="fecharTextoModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Título (nome de referência)</label>
+      <input type="text" id="texto-modal-titulo" placeholder="Ex: Promoção semanal, Mensagem padrão…"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Texto completo</label>
+      <textarea id="texto-modal-content" rows="8"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none;resize:vertical;font-family:inherit;line-height:1.5;min-height:160px"
+        placeholder="Digite aqui o texto da legenda…"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="fecharTextoModal()" class="btn btn-ghost btn-sm">Cancelar</button>
+      <button onclick="salvarTextoModal()" class="btn btn-primary btn-sm" id="texto-modal-save-btn">💾 Salvar</button>
+    </div>
+    <div id="texto-modal-msg" style="font-size:13px;text-align:center;display:none"></div>
+  </div>
+</div>
+
 {% if show_welcome %}
 <!-- Modal Editar Lote -->
 <div id="edit-batch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1200;align-items:center;justify-content:center">
@@ -2426,32 +2452,6 @@ function dismissPwaBanner() {
       <button onclick="salvarEdicaoLote()" class="btn btn-primary btn-sm" id="edit-batch-save-btn">💾 Salvar alterações</button>
     </div>
     <div id="edit-batch-msg" style="font-size:13px;text-align:center;display:none"></div>
-  </div>
-</div>
-
-<!-- Modal Texto Pronto (criar/editar) -->
-<div id="texto-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1300;align-items:center;justify-content:center">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:480px;max-width:95vw;display:flex;flex-direction:column;gap:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <strong id="texto-modal-title" style="font-size:16px">📝 Novo texto pronto</strong>
-      <button onclick="fecharTextoModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Título (nome de referência)</label>
-      <input type="text" id="texto-modal-titulo" placeholder="Ex: Promoção semanal, Mensagem padrão…"
-        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none">
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Texto completo</label>
-      <textarea id="texto-modal-content" rows="8"
-        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none;resize:vertical;font-family:inherit;line-height:1.5;min-height:160px"
-        placeholder="Digite aqui o texto da legenda…"></textarea>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="fecharTextoModal()" class="btn btn-ghost btn-sm">Cancelar</button>
-      <button onclick="salvarTextoModal()" class="btn btn-primary btn-sm" id="texto-modal-save-btn">💾 Salvar</button>
-    </div>
-    <div id="texto-modal-msg" style="font-size:13px;text-align:center;display:none"></div>
   </div>
 </div>
 

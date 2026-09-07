@@ -248,6 +248,14 @@ def init_db():
             size        INTEGER DEFAULT 0,
             uploaded_at TEXT    DEFAULT TO_CHAR(NOW(),'YYYY-MM-DD"T"HH24:MI:SS')
         )""")
+        # Textos prontos (templates de caption)
+        conn.execute("""CREATE TABLE IF NOT EXISTS ready_texts (
+            id         SERIAL PRIMARY KEY,
+            user_id    INTEGER NOT NULL,
+            title      TEXT    NOT NULL DEFAULT '',
+            content    TEXT    NOT NULL DEFAULT '',
+            created_at TEXT    DEFAULT TO_CHAR(NOW(),'YYYY-MM-DD"T"HH24:MI:SS')
+        )""")
     else:
         conn.execute("""CREATE TABLE IF NOT EXISTS users (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,6 +298,13 @@ def init_db():
             invite_link TEXT    DEFAULT '',
             imported_at TEXT    DEFAULT (datetime('now')),
             UNIQUE(user_id, group_jid)
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ready_texts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            title      TEXT    NOT NULL DEFAULT '',
+            content    TEXT    NOT NULL DEFAULT '',
+            created_at TEXT    DEFAULT (datetime('now'))
         )""")
         # Migrations SQLite
         for col, defval in [
@@ -1804,6 +1819,69 @@ def api_upload():
     if USE_PG and not pg_ok:
         return jsonify({"ok": False, "error": "Falha ao salvar mídia no banco de dados. Tente novamente."})
     return jsonify({"ok": True, "filename": filename, "media_type": media_type})
+
+# ── Textos Prontos ─────────────────────────────────────────────────────────────
+@app.route("/api/textos-prontos", methods=["GET"])
+@require_login
+def api_textos_list():
+    uid  = session["user_id"]
+    conn = db()
+    rows = conn.execute(
+        "SELECT id, title, content, created_at FROM ready_texts WHERE user_id=? ORDER BY id DESC",
+        (uid,)
+    ).fetchall()
+    conn.close()
+    return jsonify({"ok": True, "textos": [
+        {"id": r["id"], "title": r["title"], "content": r["content"]} for r in rows
+    ]})
+
+@app.route("/api/textos-prontos", methods=["POST"])
+@require_login
+def api_textos_create():
+    uid  = session["user_id"]
+    data = request.get_json() or {}
+    title   = (data.get("title") or "").strip()
+    content = (data.get("content") or "").strip()
+    if not title or not content:
+        return jsonify({"ok": False, "error": "Título e texto são obrigatórios"})
+    conn = db()
+    conn.execute("INSERT INTO ready_texts (user_id, title, content) VALUES (?,?,?)",
+                 (uid, title, content))
+    conn.commit()
+    # Busca o id gerado
+    row = conn.execute(
+        "SELECT id FROM ready_texts WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,)
+    ).fetchone()
+    conn.close()
+    return jsonify({"ok": True, "id": row["id"]})
+
+@app.route("/api/textos-prontos/<int:tid>", methods=["PUT"])
+@require_login
+def api_textos_update(tid):
+    uid  = session["user_id"]
+    data = request.get_json() or {}
+    title   = (data.get("title") or "").strip()
+    content = (data.get("content") or "").strip()
+    if not title or not content:
+        return jsonify({"ok": False, "error": "Título e texto são obrigatórios"})
+    conn = db()
+    conn.execute(
+        "UPDATE ready_texts SET title=?, content=? WHERE id=? AND user_id=?",
+        (title, content, tid, uid)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/textos-prontos/<int:tid>", methods=["DELETE"])
+@require_login
+def api_textos_delete(tid):
+    uid  = session["user_id"]
+    conn = db()
+    conn.execute("DELETE FROM ready_texts WHERE id=? AND user_id=?", (tid, uid))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
 
 # ── Library ────────────────────────────────────────────────────────────────────
 @app.route("/api/library", methods=["GET"])

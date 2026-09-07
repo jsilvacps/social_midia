@@ -418,7 +418,15 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <input type="hidden" id="client-phone" value="">
       {% endif %}
       <div class="field">
-        <textarea id="caption" placeholder="Digite o texto que acompanha a publicação…"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+          <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin:0">Texto / Legenda</label>
+          <select id="texto-pronto-sel" onchange="aplicarTextoPronto(this)"
+            style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;outline:none;max-width:220px">
+            <option value="">✏️ Digitar manualmente</option>
+          </select>
+        </div>
+        <textarea id="caption" placeholder="Digite o texto que acompanha a publicação…"
+          onblur="sugerirSalvarTexto(this)"></textarea>
       </div>
     </div>
 
@@ -688,6 +696,14 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         🧹 Limpar agora
       </button>
       <span id="limpar-status" style="font-size:13px;color:var(--muted);margin-left:10px"></span>
+    </div>
+
+    <!-- Textos Prontos -->
+    <div class="card">
+      <p class="card-title">📝 Textos Prontos</p>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Salve legendas que você usa com frequência para reutilizar na criação de posts.</p>
+      <div id="textos-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+      <button class="btn btn-secondary btn-sm" onclick="abrirNovoTexto()">➕ Novo texto pronto</button>
     </div>
 
     <!-- Instagram -->
@@ -989,7 +1005,7 @@ function switchTab(name, btn) {
   try{ document.getElementById("main").scrollTo(0,0); }catch(e){}
   // Lembra a aba ativa para restaurar no reload
   try{ localStorage.setItem("activeTab", name); }catch(e){}
-  if (name === "config") loadAutoClearState();
+  if (name === "config") { loadAutoClearState(); loadTextosProntos(); }
 }
 
 // Restaura última aba ao carregar a página
@@ -1009,6 +1025,8 @@ function switchTab(name, btn) {
       }
     }
   } catch(e) {}
+  // Carrega textos prontos sempre (para preencher o select na aba Criar)
+  loadTextosProntos();
 })();
 
 // ══ File Upload ══════════════════════════════════════════
@@ -2107,6 +2125,170 @@ function useFromLibrary(f) {
   document.getElementById("file-size-label").textContent = "";
   toast("✅ Mídia selecionada — configure e envie!");
 }
+
+// ── Textos Prontos ────────────────────────────────────────────────────────────
+var _textosCache = [];      // lista carregada do servidor
+var _textoEditId = null;    // id em edição (null = novo)
+var _captionAntes = "";     // valor do caption antes de perder foco
+
+async function loadTextosProntos() {
+  try {
+    const r = await fetch("/api/textos-prontos").then(r=>r.json());
+    _textosCache = r.textos || [];
+    renderizarTextosConfig();
+    preencherSelectTextos();
+  } catch(e) {}
+}
+
+function renderizarTextosConfig() {
+  const el = document.getElementById("textos-lista");
+  if (!el) return;
+  if (!_textosCache.length) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--muted)">Nenhum texto salvo ainda.</p>';
+    return;
+  }
+  el.innerHTML = _textosCache.map(t => `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">${escHtml(t.title)}</div>
+        <div style="font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:60px;overflow:hidden;text-overflow:ellipsis">${escHtml(t.content.substring(0,120))}${t.content.length>120?'…':''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" style="padding:4px 8px;font-size:12px" onclick="editarTexto(${t.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" style="padding:4px 8px;font-size:12px" onclick="excluirTexto(${t.id})">🗑</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function preencherSelectTextos() {
+  const sel = document.getElementById("texto-pronto-sel");
+  if (!sel) return;
+  const val = sel.value;
+  sel.innerHTML = '<option value="">✏️ Digitar manualmente</option>' +
+    _textosCache.map(t => `<option value="${t.id}">${escHtml(t.title)}</option>`).join("");
+  sel.value = val;
+}
+
+function aplicarTextoPronto(sel) {
+  if (!sel.value) return;
+  const t = _textosCache.find(x => x.id == sel.value);
+  if (!t) return;
+  const ca = document.getElementById("caption");
+  if (ca) { ca.value = t.content; ca.focus(); }
+}
+
+function sugerirSalvarTexto(ta) {
+  const val = (ta.value || "").trim();
+  if (!val || val === _captionAntes) return;
+  // Só pergunta se o select está em "manual" e o texto não está já nos prontos
+  const sel = document.getElementById("texto-pronto-sel");
+  if (sel && sel.value) return; // está usando texto pronto — não pergunta
+  if (_textosCache.some(t => t.content.trim() === val)) return; // já existe
+  // Pergunta com um toast/confirm discreto
+  if (confirm('💡 Deseja salvar esse texto como "Texto Pronto" para usar depois?\n\nClique OK para salvar, Cancelar para continuar sem salvar.')) {
+    const titulo = prompt("Como quer chamar esse texto pronto?\n(Ex: Promoção semanal, Apresentação Umbrela…)");
+    if (titulo && titulo.trim()) {
+      salvarTextoRapido(titulo.trim(), val);
+    }
+  }
+  _captionAntes = val;
+}
+
+async function salvarTextoRapido(title, content) {
+  const r = await fetch("/api/textos-prontos", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({title, content})
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) {
+    await loadTextosProntos();
+    // Seleciona o texto recém-criado no dropdown
+    const sel = document.getElementById("texto-pronto-sel");
+    if (sel && r.id) sel.value = r.id;
+    toast("✅ Texto pronto salvo!");
+  }
+}
+
+// Modal criar/editar
+function abrirNovoTexto() {
+  _textoEditId = null;
+  document.getElementById("texto-modal-title").textContent = "📝 Novo texto pronto";
+  document.getElementById("texto-modal-titulo").value = "";
+  document.getElementById("texto-modal-content").value = "";
+  document.getElementById("texto-modal-msg").style.display = "none";
+  document.getElementById("texto-modal").style.display = "flex";
+}
+
+function editarTexto(id) {
+  const t = _textosCache.find(x => x.id == id);
+  if (!t) return;
+  _textoEditId = id;
+  document.getElementById("texto-modal-title").textContent = "✏️ Editar texto pronto";
+  document.getElementById("texto-modal-titulo").value = t.title;
+  document.getElementById("texto-modal-content").value = t.content;
+  document.getElementById("texto-modal-msg").style.display = "none";
+  document.getElementById("texto-modal").style.display = "flex";
+}
+
+function fecharTextoModal() {
+  document.getElementById("texto-modal").style.display = "none";
+  _textoEditId = null;
+}
+
+async function salvarTextoModal() {
+  const title   = document.getElementById("texto-modal-titulo").value.trim();
+  const content = document.getElementById("texto-modal-content").value.trim();
+  if (!title || !content) {
+    const msg = document.getElementById("texto-modal-msg");
+    msg.style.display = "block"; msg.style.color = "var(--danger)";
+    msg.textContent = "❌ Preencha título e texto";
+    return;
+  }
+  const btn = document.getElementById("texto-modal-save-btn");
+  btn.disabled = true; btn.textContent = "⏳ Salvando…";
+
+  const url    = _textoEditId ? `/api/textos-prontos/${_textoEditId}` : "/api/textos-prontos";
+  const method = _textoEditId ? "PUT" : "POST";
+  const r = await fetch(url, {
+    method,
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({title, content})
+  }).then(r=>r.json()).catch(()=>({ok:false, error:"Erro de rede"}));
+
+  btn.disabled = false; btn.textContent = "💾 Salvar";
+  const msg = document.getElementById("texto-modal-msg");
+  if (r.ok) {
+    await loadTextosProntos();
+    msg.style.display = "block"; msg.style.color = "var(--green)";
+    msg.textContent = "✅ Salvo!";
+    setTimeout(fecharTextoModal, 800);
+  } else {
+    msg.style.display = "block"; msg.style.color = "var(--danger)";
+    msg.textContent = "❌ " + (r.error || "Erro ao salvar");
+  }
+}
+
+async function excluirTexto(id) {
+  if (!confirm("Excluir este texto pronto?")) return;
+  await fetch(`/api/textos-prontos/${id}`, {method:"DELETE"});
+  await loadTextosProntos();
+  toast("🗑 Texto removido");
+}
+
+function escHtml(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// Fecha modal ao clicar fora
+document.getElementById("texto-modal")?.addEventListener("click", function(e) {
+  if (e.target === this) fecharTextoModal();
+});
+
+// Guarda valor anterior do caption ao focar (para detectar mudança)
+document.getElementById("caption")?.addEventListener("focus", function() {
+  _captionAntes = this.value;
+});
 </script>
 
 <!-- Banner de instalação PWA -->
@@ -2231,6 +2413,32 @@ function dismissPwaBanner() {
       <button onclick="salvarEdicaoLote()" class="btn btn-primary btn-sm" id="edit-batch-save-btn">💾 Salvar alterações</button>
     </div>
     <div id="edit-batch-msg" style="font-size:13px;text-align:center;display:none"></div>
+  </div>
+</div>
+
+<!-- Modal Texto Pronto (criar/editar) -->
+<div id="texto-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1300;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:480px;max-width:95vw;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong id="texto-modal-title" style="font-size:16px">📝 Novo texto pronto</strong>
+      <button onclick="fecharTextoModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Título (nome de referência)</label>
+      <input type="text" id="texto-modal-titulo" placeholder="Ex: Promoção semanal, Mensagem padrão…"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Texto completo</label>
+      <textarea id="texto-modal-content" rows="8"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 12px;outline:none;resize:vertical;font-family:inherit;line-height:1.5;min-height:160px"
+        placeholder="Digite aqui o texto da legenda…"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="fecharTextoModal()" class="btn btn-ghost btn-sm">Cancelar</button>
+      <button onclick="salvarTextoModal()" class="btn btn-primary btn-sm" id="texto-modal-save-btn">💾 Salvar</button>
+    </div>
+    <div id="texto-modal-msg" style="font-size:13px;text-align:center;display:none"></div>
   </div>
 </div>
 

@@ -996,21 +996,26 @@ def wa_clear_chat(jid: str, cfg: dict) -> tuple[bool, str]:
     instance = cfg.get("evo_instance", "")
     if not base or not instance:
         return False, "não configurado"
-    # Tenta DELETE primeiro, depois POST (depende da versão da Evolution API)
-    for method, url in [
-        ("DELETE", f"{base}/chat/clearMessage/{instance}"),
-        ("POST",   f"{base}/chat/clearMessage/{instance}"),
-        ("DELETE", f"{base}/chat/clearMessages/{instance}"),
-    ]:
+    # Evolution API v2: tenta os endpoints conhecidos em ordem
+    candidates = [
+        ("DELETE", f"{base}/chat/delete/{instance}",        {"id": jid}),
+        ("DELETE", f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
+        ("POST",   f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
+        ("DELETE", f"{base}/chat/clearMessages/{instance}", {"remoteJid": jid}),
+        ("POST",   f"{base}/chat/delete/{instance}",        {"id": jid}),
+    ]
+    for method, url, body in candidates:
         try:
             fn = requests.delete if method == "DELETE" else requests.post
-            r  = fn(url, headers=_evo_headers(cfg), json={"remoteJid": jid}, timeout=10)
+            r  = fn(url, headers=_evo_headers(cfg), json=body, timeout=10)
             print(f"[clear_chat] {method} {url} jid={jid} → {r.status_code} {r.text[:120]}")
             if r.status_code < 300:
                 return True, ""
+            if r.status_code == 404:
+                continue  # endpoint não existe, tenta próximo
         except Exception as e:
             print(f"[clear_chat] {method} {jid}: {e}")
-    return False, f"HTTP falhou (ver logs)"
+    return False, "Endpoint não encontrado (ver logs)"
 
 def wa_clear_all_group_chats(user_id: int) -> dict:
     """Limpa o histórico de todos os grupos WA do usuário."""
@@ -1066,6 +1071,35 @@ def api_limpar_conversas():
     uid = session["user_id"]
     result = wa_clear_all_group_chats(uid)
     return jsonify(result)
+
+# ── Rota: diagnóstico de limpeza (testa 1 grupo e retorna logs) ───────────────
+@app.route("/api/limpar-conversas/diagnostico", methods=["POST"])
+@require_login
+def api_limpar_diagnostico():
+    uid = session["user_id"]
+    cfg = load_config(user_id=uid)
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    groups, err = wa_get_groups(cfg)
+    if not groups:
+        return jsonify({"ok": False, "error": err or "Sem grupos"})
+    jid = groups[0].get("id", "")
+    results = []
+    candidates = [
+        ("DELETE", f"{base}/chat/delete/{instance}",        {"id": jid}),
+        ("DELETE", f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
+        ("POST",   f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
+        ("DELETE", f"{base}/chat/clearMessages/{instance}", {"remoteJid": jid}),
+    ]
+    for method, url, body in candidates:
+        try:
+            fn = requests.delete if method == "DELETE" else requests.post
+            r  = fn(url, headers=_evo_headers(cfg), json=body, timeout=10)
+            results.append({"method": method, "url": url, "body": body,
+                            "status": r.status_code, "response": r.text[:300]})
+        except Exception as e:
+            results.append({"method": method, "url": url, "error": str(e)})
+    return jsonify({"jid_testado": jid, "resultados": results})
 
 # ── Rota: toggle limpeza automática ───────────────────────────────────────────
 @app.route("/api/config/auto-clear-chats", methods=["POST"])

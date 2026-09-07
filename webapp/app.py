@@ -558,7 +558,7 @@ def wa_send_image(group_id, caption, filepath, cfg, db_filename=""):
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "image",
                   "mimetype": "image/jpeg", "caption": caption,
-                  "media": f"data:image/jpeg;base64,{b64}"},
+                  "media": b64},
             timeout=120
         )
         if r.status_code in (200, 201):
@@ -580,7 +580,7 @@ def wa_send_video(group_id, caption, filepath, cfg, db_filename=""):
             headers=_evo_headers(cfg),
             json={"number": group_id, "mediatype": "video",
                   "mimetype": "video/mp4", "caption": caption,
-                  "media": f"data:video/mp4;base64,{b64}"},
+                  "media": b64},
             timeout=180
         )
         if r.status_code in (200, 201):
@@ -620,9 +620,8 @@ def wa_send_status(caption, filepath, media_type, cfg, db_filename=""):
     b64      = base64.b64encode(content).decode()
     stype    = "video" if media_type == "video" else "image"
     mime     = "video/mp4" if stype == "video" else "image/jpeg"
-    media_b64 = f"data:{mime};base64,{b64}"
     # Tenta endpoint sendStatus (Evolution API v2)
-    body = {"type": stype, "content": media_b64, "caption": caption, "allContacts": True}
+    body = {"type": stype, "content": b64, "caption": caption, "allContacts": True}
     try:
         r = requests.post(
             f"{base}/message/sendStatus/{instance}",
@@ -639,7 +638,7 @@ def wa_send_status(caption, filepath, media_type, cfg, db_filename=""):
             "mediatype": stype,
             "mimetype": mime,
             "caption": caption,
-            "media": media_b64,
+            "media": b64,
         }
         r2 = requests.post(
             f"{base}/message/sendMedia/{instance}",

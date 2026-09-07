@@ -1698,16 +1698,17 @@ def _media_persist(filename: str, content: bytes, mimetype: str, is_library: boo
     if not USE_PG:
         return True  # sem PG, disco local é suficiente
     try:
-        conn = db()
-        conn._conn.cursor().execute(
+        raw = psycopg2.connect(DATABASE_URL)
+        cur = raw.cursor()
+        cur.execute(
             """INSERT INTO media_files (filename, content, mimetype, is_library, size)
                VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (filename) DO UPDATE
                SET content=EXCLUDED.content, mimetype=EXCLUDED.mimetype, size=EXCLUDED.size""",
             (filename, psycopg2.Binary(content), mimetype, int(is_library), len(content))
         )
-        conn._conn.commit()
-        conn.close()
+        raw.commit()
+        raw.close()
         print(f"[media_persist] salvo no PG: {filename} ({len(content)} bytes)")
         return True
     except Exception as e:
@@ -1719,19 +1720,20 @@ def _media_restore(filename: str, dest_path: Path) -> bool:
     if not USE_PG or dest_path.exists():
         return dest_path.exists()
     try:
-        conn = db()
-        cur = conn._conn.cursor()
-        cur.execute("SELECT content, mimetype FROM media_files WHERE filename=%s", (filename,))
+        raw = psycopg2.connect(DATABASE_URL)
+        cur = raw.cursor()
+        cur.execute("SELECT content FROM media_files WHERE filename=%s", (filename,))
         row = cur.fetchone()
-        conn.close()
+        raw.close()
         if row:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             dest_path.write_bytes(bytes(row[0]))
             print(f"[media_restore] restaurado do PG: {filename}")
             return True
+        print(f"[media_restore] nao encontrado no PG: {filename}")
         return False
     except Exception as e:
-        print(f"[media_restore] erro ao restaurar {filename}: {e}")
+        print(f"[media_restore] ERRO ao restaurar {filename}: {e}")
         return False
 
 def _serve_media(path: Path, filename: str):

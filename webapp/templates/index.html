@@ -1410,7 +1410,7 @@ function buildBatchCard(batchKey, posts) {
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:0 14px 10px;justify-content:flex-end">
-      ${batchId && posts.some(p=>p.status==='pending') ? `<button class="btn btn-ghost btn-sm" onclick="abrirEditarLote('${batchId}',\`${esc(caption)}\`,\`${next?next.scheduled_at:''}\`)">✏️ Editar</button>` : ""}
+      ${batchId && posts.some(p=>p.status==='pending') ? `<button class="btn btn-ghost btn-sm" onclick="abrirEditarLote(this)" data-batch="${batchId}" data-caption="${esc(caption)}" data-at="${next?esc(next.scheduled_at):''}">✏️ Editar</button>` : ""}
       ${!isSolo && batchId ? `<button class="btn btn-danger btn-sm" onclick="deleteBatch('${batchId}')">🗑 Excluir lote</button>` : ""}
     </div>
     <div id="${uid}-body" style="display:none;border-top:1px solid var(--border)">
@@ -1654,9 +1654,12 @@ async function deletePost(id) {
 
 // ── Editar lote ──────────────────────────────────────────
 var _editBatchId = null;
-function abrirEditarLote(batchId, caption, scheduledAt) {
+function abrirEditarLote(btnEl) {
+  const batchId    = btnEl.dataset.batch;
+  const caption    = btnEl.dataset.caption || "";
+  const scheduledAt= btnEl.dataset.at || "";
   _editBatchId = batchId;
-  document.getElementById("edit-batch-caption").value = caption || "";
+  document.getElementById("edit-batch-caption").value = caption;
   // Formata para datetime-local (YYYY-MM-DDTHH:MM)
   const dt = scheduledAt ? scheduledAt.substring(0,16) : "";
   document.getElementById("edit-batch-dt").value = dt;

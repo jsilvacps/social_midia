@@ -1020,34 +1020,44 @@ threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
 
 # ── Limpeza automática de conversas WA ────────────────────────────────────────
 def wa_clear_chat(jid: str, cfg: dict) -> tuple[bool, str]:
-    """Limpa o histórico de uma conversa no WhatsApp via Evolution API."""
+    """Arquiva conversa no WhatsApp via Evolution API v2 (archiveChat)."""
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
     if not base or not instance:
         return False, "não configurado"
-    # Evolution API v2: tenta os endpoints conhecidos em ordem
-    candidates = [
-        ("DELETE", f"{base}/chat/delete/{instance}",        {"id": jid}),
-        ("DELETE", f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
-        ("POST",   f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
-        ("DELETE", f"{base}/chat/clearMessages/{instance}", {"remoteJid": jid}),
-        ("POST",   f"{base}/chat/delete/{instance}",        {"id": jid}),
-    ]
-    for method, url, body in candidates:
-        try:
-            fn = requests.delete if method == "DELETE" else requests.post
-            r  = fn(url, headers=_evo_headers(cfg), json=body, timeout=10)
-            print(f"[clear_chat] {method} {url} jid={jid} → {r.status_code} {r.text[:120]}")
-            if r.status_code < 300:
-                return True, ""
-            if r.status_code == 404:
-                continue  # endpoint não existe, tenta próximo
-        except Exception as e:
-            print(f"[clear_chat] {method} {jid}: {e}")
-    return False, "Endpoint não encontrado (ver logs)"
+    # Evolution API v2: archiveChat é o único endpoint disponível para ocultar conversas
+    url  = f"{base}/chat/archiveChat/{instance}"
+    body = {"chat": jid, "archive": True}
+    try:
+        r = requests.post(url, headers=_evo_headers(cfg), json=body, timeout=10)
+        print(f"[archive_chat] {url} jid={jid} → {r.status_code} {r.text[:200]}")
+        if r.status_code in (200, 201):
+            return True, ""
+        return False, f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        print(f"[archive_chat] {jid}: {e}")
+        return False, str(e)
 
-def wa_clear_all_group_chats(user_id: int) -> dict:
-    """Limpa o histórico de todos os grupos WA do usuário."""
+def wa_leave_group(jid: str, cfg: dict) -> tuple[bool, str]:
+    """Sai de um grupo WA via Evolution API v2."""
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    if not base or not instance:
+        return False, "não configurado"
+    url  = f"{base}/group/leaveGroup/{instance}"
+    body = {"groupJid": jid}
+    try:
+        r = requests.post(url, headers=_evo_headers(cfg), json=body, timeout=10)
+        print(f"[leave_group] {url} jid={jid} → {r.status_code} {r.text[:200]}")
+        if r.status_code in (200, 201):
+            return True, ""
+        return False, f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        print(f"[leave_group] {jid}: {e}")
+        return False, str(e)
+
+def wa_clear_all_group_chats(user_id: int, action: str = "archive") -> dict:
+    """Processa todos os grupos WA: action='archive' arquiva, action='leave' sai do grupo."""
     cfg = load_config(user_id=user_id)
     groups, err = wa_get_groups(cfg)
     if not groups:
@@ -1058,13 +1068,16 @@ def wa_clear_all_group_chats(user_id: int) -> dict:
     for g in groups:
         jid = g.get("id", "")
         if jid:
-            ok, e = wa_clear_chat(jid, cfg)
+            if action == "leave":
+                ok, e = wa_leave_group(jid, cfg)
+            else:
+                ok, e = wa_clear_chat(jid, cfg)
             if ok:
                 ok_count += 1
             elif e:
                 last_err = e
-        time.sleep(0.2)  # evita rate limit
-    return {"ok": True, "total": total, "cleared": ok_count,
+        time.sleep(0.3)  # evita rate limit
+    return {"ok": True, "total": total, "cleared": ok_count, "action": action,
             "error": last_err if ok_count == 0 else ""}
 
 def _auto_clear_loop():
@@ -1093,12 +1106,21 @@ def _auto_clear_loop():
 
 threading.Thread(target=_auto_clear_loop, daemon=True, name="auto_clear").start()
 
-# ── Rota: limpar conversas manualmente ────────────────────────────────────────
+# ── Rota: limpar/sair conversas manualmente ───────────────────────────────────
 @app.route("/api/limpar-conversas", methods=["POST"])
 @require_login
 def api_limpar_conversas():
-    uid = session["user_id"]
-    result = wa_clear_all_group_chats(uid)
+    uid    = session["user_id"]
+    action = (request.json or {}).get("action", "archive")  # "archive" ou "leave"
+    result = wa_clear_all_group_chats(uid, action=action)
+    return jsonify(result)
+
+@app.route("/api/sair-grupos", methods=["POST"])
+@require_login
+def api_sair_grupos():
+    """Sai de TODOS os grupos WA. Ação irreversível."""
+    uid    = session["user_id"]
+    result = wa_clear_all_group_chats(uid, action="leave")
     return jsonify(result)
 
 # ── Rota: diagnóstico de limpeza (testa 1 grupo e retorna logs) ───────────────
@@ -1114,21 +1136,43 @@ def api_limpar_diagnostico():
         return jsonify({"ok": False, "error": err or "Sem grupos"})
     jid = groups[0].get("id", "")
     results = []
+    # Testa endpoints de limpeza/deleção
     candidates = [
-        ("DELETE", f"{base}/chat/delete/{instance}",        {"id": jid}),
-        ("DELETE", f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
-        ("POST",   f"{base}/chat/clearMessage/{instance}",  {"remoteJid": jid}),
-        ("DELETE", f"{base}/chat/clearMessages/{instance}", {"remoteJid": jid}),
+        ("DELETE", f"{base}/chat/delete/{instance}",          {"id": jid}),
+        ("DELETE", f"{base}/chat/clearMessage/{instance}",    {"remoteJid": jid}),
+        ("POST",   f"{base}/chat/clearMessage/{instance}",    {"remoteJid": jid}),
+        ("DELETE", f"{base}/chat/clearMessages/{instance}",   {"remoteJid": jid}),
+        ("POST",   f"{base}/chat/deleteMessage/{instance}",   {"remoteJid": jid}),
+        ("GET",    f"{base}/group/leaveGroup/{instance}",     None),
+        ("DELETE", f"{base}/group/leaveGroup/{instance}",     {"groupJid": jid}),
+        ("POST",   f"{base}/group/leaveGroup/{instance}",     {"groupJid": jid}),
+        ("POST",   f"{base}/chat/archiveChat/{instance}",     {"chat": jid, "archive": True}),
     ]
     for method, url, body in candidates:
         try:
-            fn = requests.delete if method == "DELETE" else requests.post
-            r  = fn(url, headers=_evo_headers(cfg), json=body, timeout=10)
+            if method == "GET":
+                r = requests.get(url, headers=_evo_headers(cfg), timeout=10)
+            elif method == "DELETE":
+                r = requests.delete(url, headers=_evo_headers(cfg), json=body, timeout=10)
+            else:
+                r = requests.post(url, headers=_evo_headers(cfg), json=body, timeout=10)
             results.append({"method": method, "url": url, "body": body,
                             "status": r.status_code, "response": r.text[:300]})
         except Exception as e:
             results.append({"method": method, "url": url, "error": str(e)})
-    return jsonify({"jid_testado": jid, "resultados": results})
+    # Tenta descobrir endpoints disponíveis via Swagger
+    swagger_info = None
+    try:
+        sw = requests.get(f"{base}/api-json", headers=_evo_headers(cfg), timeout=10)
+        if sw.status_code == 200:
+            paths = list(sw.json().get("paths", {}).keys())
+            chat_paths = [p for p in paths if "chat" in p.lower() or "group" in p.lower()]
+            swagger_info = {"ok": True, "total_endpoints": len(paths), "chat_group_paths": chat_paths[:30]}
+        else:
+            swagger_info = {"ok": False, "status": sw.status_code}
+    except Exception as e:
+        swagger_info = {"ok": False, "error": str(e)}
+    return jsonify({"jid_testado": jid, "resultados": results, "swagger": swagger_info})
 
 # ── Rota: toggle limpeza automática ───────────────────────────────────────────
 @app.route("/api/config/auto-clear-chats", methods=["POST"])

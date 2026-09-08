@@ -679,28 +679,32 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
     <!-- Limpeza de conversas -->
     <div class="card">
-      <p class="card-title">🧹 Limpeza de Conversas de Grupos</p>
+      <p class="card-title">📦 Arquivar Conversas de Grupos</p>
       <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-        Limpa o histórico de mensagens de todos os grupos no seu WhatsApp (apenas no seu dispositivo, não apaga para outros membros).
+        Arquiva todos os grupos no seu WhatsApp — eles saem da lista principal e ficam na aba "Arquivadas". A Evolution API v2 não suporta apagar mensagens via API.
       </p>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;user-select:none">
           <span id="auto-clear-track" onclick="toggleAutoClearClick()" style="display:inline-flex;width:44px;height:24px;border-radius:12px;background:#444;transition:background .2s;flex-shrink:0;align-items:center;padding:2px;cursor:pointer">
             <span id="auto-clear-thumb" style="width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;transform:translateX(0)"></span>
           </span>
-          Limpar automaticamente a cada hora
+          Arquivar automaticamente a cada hora
         </label>
         <input type="checkbox" id="auto-clear-toggle" style="display:none" onchange="toggleAutoClear(this.checked)">
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora()" id="btn-limpar-agora">
-          🧹 Limpar agora
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora('archive')" id="btn-limpar-agora">
+          📦 Arquivar grupos
+        </button>
+        <button class="btn btn-sm" style="background:#c0392b;color:#fff" onclick="limparConversasAgora('leave')" id="btn-sair-grupos">
+          🚪 Sair de todos os grupos
         </button>
         <button class="btn btn-ghost btn-sm" onclick="diagLimpeza()" id="btn-diag-limpeza">
-          🔍 Testar API
+          🔍 Diagnóstico API
         </button>
-        <span id="limpar-status" style="font-size:13px;color:var(--muted)"></span>
       </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">"Sair de grupos" remove completamente do celular. "Arquivar" apenas oculta na lista principal.</p>
+      <span id="limpar-status" style="font-size:13px;color:var(--muted)"></span>
       <div id="diag-limpeza-result" style="display:none;margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--text)"></div>
     </div>
 
@@ -1993,17 +1997,25 @@ async function diagLimpeza() {
   btn.disabled = false; btn.textContent = "🔍 Testar API";
 }
 
-async function limparConversasAgora() {
-  if (!confirm("Limpar histórico de TODOS os grupos no seu WhatsApp? (apenas no seu dispositivo)")) return;
-  const btn = document.getElementById("btn-limpar-agora");
+async function limparConversasAgora(action) {
+  const msg = action === "leave"
+    ? "⚠️ ATENÇÃO: Isso vai SAIR de TODOS os grupos! Você precisará ser readicionado manualmente. Continuar?"
+    : "Arquivar TODOS os grupos no seu WhatsApp? (ficam na pasta Arquivadas)";
+  if (!confirm(msg)) return;
+  const btn = document.getElementById(action === "leave" ? "btn-sair-grupos" : "btn-limpar-agora");
   const status = document.getElementById("limpar-status");
   btn.disabled = true;
-  status.textContent = "⏳ Limpando...";
+  status.textContent = "⏳ Processando...";
   try {
-    const r = await fetch("/api/limpar-conversas", {method:"POST"}).then(x=>x.json());
+    const r = await fetch("/api/limpar-conversas", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({action})
+    }).then(x=>x.json());
     if (r.ok) {
-      status.textContent = `✅ ${r.cleared} de ${r.total} grupos limpos`;
-      toast(`✅ ${r.cleared} grupos limpos!`);
+      const label = action === "leave" ? "grupos saídos" : "arquivados";
+      status.textContent = `✅ ${r.cleared} de ${r.total} ${label}`;
+      toast(`✅ ${r.cleared} grupos ${label}!`);
     } else {
       status.textContent = "❌ " + (r.error || "Erro");
     }

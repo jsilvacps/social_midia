@@ -553,13 +553,25 @@ def _media_url(filename: str, cfg) -> str:
     return f"{app_url}/api/media/{filename}"
 
 def _read_media_bytes(filepath: Path, db_filename: str) -> bytes | None:
-    """Lê o arquivo do disco ou restaura do PostgreSQL. Retorna bytes ou None."""
+    """Lê o arquivo do disco ou diretamente do PostgreSQL. Retorna bytes ou None."""
+    # 1. Tenta disco (caso ainda esteja em /tmp)
     if filepath.exists():
         return filepath.read_bytes()
-    # Tenta restaurar do PG
+    # 2. Lê direto do PG sem precisar escrever em disco
     fname = db_filename or filepath.name
-    if _media_restore(fname, filepath):
-        return filepath.read_bytes()
+    if USE_PG:
+        try:
+            raw = psycopg2.connect(DATABASE_URL)
+            cur = raw.cursor()
+            cur.execute("SELECT content FROM media_files WHERE filename=%s", (fname,))
+            row = cur.fetchone()
+            raw.close()
+            if row:
+                print(f"[read_media] lido do PG: {fname} ({len(bytes(row[0]))} bytes)")
+                return bytes(row[0])
+            print(f"[read_media] NAO encontrado no PG: {fname}")
+        except Exception as e:
+            print(f"[read_media] ERRO PG ao ler {fname}: {e}")
     return None
 
 def wa_send_image(group_id, caption, filepath, cfg, db_filename=""):
@@ -1714,6 +1726,7 @@ def _media_persist(filename: str, content: bytes, mimetype: str, is_library: boo
     """Salva arquivo no PostgreSQL para sobreviver a restarts do Render. Retorna True se ok."""
     if not USE_PG:
         return True  # sem PG, disco local é suficiente
+    import traceback as _tb
     try:
         raw = psycopg2.connect(DATABASE_URL)
         cur = raw.cursor()
@@ -1726,10 +1739,11 @@ def _media_persist(filename: str, content: bytes, mimetype: str, is_library: boo
         )
         raw.commit()
         raw.close()
-        print(f"[media_persist] salvo no PG: {filename} ({len(content)} bytes)")
+        print(f"[media_persist] OK: {filename} ({len(content):,} bytes)")
         return True
     except Exception as e:
-        print(f"[media_persist] ERRO ao salvar {filename} no PG: {e}")
+        print(f"[media_persist] ERRO: {filename} — {e}")
+        print(_tb.format_exc())
         return False
 
 def _media_restore(filename: str, dest_path: Path) -> bool:
@@ -1780,9 +1794,9 @@ def api_library_file(filename):
 @app.route("/api/admin/diagnostico-midia", methods=["GET"])
 @require_login
 def api_diagnostico_midia():
-    """Verifica quantos arquivos estão salvos no PostgreSQL."""
-    result = {"use_pg": USE_PG, "pg_count": None, "pg_error": None,
-              "disco_uploads": 0, "disco_library": 0}
+    """Verifica arquivos no disco e no PostgreSQL, e lista os últimos 10 do PG."""
+    result = {"use_pg": USE_PG, "pg_count": 0, "pg_error": None,
+              "disco_uploads": 0, "disco_library": 0, "pg_files": []}
     try:
         result["disco_uploads"]  = sum(1 for _ in UPLOADS_DIR.iterdir() if _.is_file())
         result["disco_library"]  = sum(1 for _ in LIBRARY_DIR.iterdir() if _.is_file())
@@ -1790,13 +1804,15 @@ def api_diagnostico_midia():
         result["disco_error"] = str(e)
     if USE_PG:
         try:
-            conn = db()
-            cur  = conn._conn.cursor()
-            cur.execute("SELECT COUNT(*), SUM(size) FROM media_files")
+            raw = psycopg2.connect(DATABASE_URL)
+            cur = raw.cursor()
+            cur.execute("SELECT COUNT(*), COALESCE(SUM(size),0) FROM media_files")
             row = cur.fetchone()
-            conn.close()
-            result["pg_count"]      = row[0]
-            result["pg_total_bytes"] = row[1]
+            result["pg_count"] = row[0]
+            result["pg_total_kb"] = row[1] // 1024
+            cur.execute("SELECT filename, size, mimetype FROM media_files ORDER BY uploaded_at DESC LIMIT 10")
+            result["pg_files"] = [{"filename": r[0], "size_kb": (r[1] or 0)//1024, "mime": r[2]} for r in cur.fetchall()]
+            raw.close()
         except Exception as e:
             result["pg_error"] = str(e)
     return jsonify(result)
@@ -1960,7 +1976,9 @@ def api_library_upload():
     with open(str(dest), "wb") as fh:
         fh.write(content)
     mimetype = _MIME_MAP.get(Path(filename).suffix.lower(), "application/octet-stream")
-    _media_persist(filename, content, mimetype, is_library=True)
+    pg_ok = _media_persist(filename, content, mimetype, is_library=True)
+    if USE_PG and not pg_ok:
+        return jsonify({"ok": False, "error": f"Falha ao salvar mídia no banco (arquivo: {len(content)//1024}KB). Tente um arquivo menor ou tente novamente."})
     return jsonify({"ok": True, "filename": filename, "media_type": mtype,
                     "size": dest.stat().st_size})
 

@@ -881,9 +881,11 @@ def _process_post_inner(post_id, row, cfg):
     lib_filename = ""
     if filename.startswith("__lib__"):
         lib_filename = filename[len("__lib__"):]
-        filepath = LIBRARY_DIR / lib_filename
+        filepath     = LIBRARY_DIR / lib_filename
+        db_filename  = lib_filename          # PG armazena sem o prefixo __lib__
     else:
-        filepath = UPLOADS_DIR / filename
+        filepath     = UPLOADS_DIR / filename
+        db_filename  = filename
     is_video = media_type == "video"
 
     result = {"wa": {}, "ig": {}}
@@ -900,7 +902,7 @@ def _process_post_inner(post_id, row, cfg):
         gid  = g.get("id", g) if isinstance(g, dict) else g
         name = g.get("name", gid) if isinstance(g, dict) else gid
         result["wa"][name] = "⏳ enviando..."
-        ok, err = wa_send(gid, caption, filepath, media_type, cfg, db_filename=filename)
+        ok, err = wa_send(gid, caption, filepath, media_type, cfg, db_filename=db_filename)
         result["wa"][name] = "ok" if ok else err
         if not ok:
             errors.append(f"WA {name}: {err}")
@@ -930,7 +932,7 @@ def _process_post_inner(post_id, row, cfg):
             errors.append(f"IG Reels: {err}")
 
     if wa_status:
-        ok, err = wa_send_status(caption, filepath, media_type, cfg, db_filename=lib_filename)
+        ok, err = wa_send_status(caption, filepath, media_type, cfg, db_filename=db_filename)
         result.setdefault("wa_status", {})["status"] = "ok" if ok else err
         if not ok:
             errors.append(f"WA Status: {err}")
@@ -1966,6 +1968,56 @@ def api_diagnostico_midia():
         except Exception as e:
             result["pg_error"] = str(e)
     return jsonify(result)
+
+# ── Re-salva mídias de posts pendentes no PG (recover após restart) ───────────
+@app.route("/api/admin/reenviar-midias", methods=["POST"])
+@require_login
+def api_reenviar_midias():
+    """Varre posts pendentes, tenta re-salvar no PG os arquivos ainda em disco."""
+    uid  = session["user_id"]
+    conn = db()
+    posts = conn.execute(
+        "SELECT DISTINCT filename, media_type FROM posts WHERE status='pending' AND user_id=?", (uid,)
+    ).fetchall()
+    conn.close()
+    salvos, faltando, ja_no_pg = [], [], []
+    for p in posts:
+        fn = p["filename"] or ""
+        if not fn:
+            continue
+        if fn.startswith("__lib__"):
+            pg_fn   = fn[len("__lib__"):]
+            filepath = LIBRARY_DIR / pg_fn
+        else:
+            pg_fn    = fn
+            filepath = UPLOADS_DIR / pg_fn
+        # Verifica se já está no PG
+        if USE_PG:
+            try:
+                raw = psycopg2.connect(DATABASE_URL)
+                cur = raw.cursor()
+                cur.execute("SELECT 1 FROM media_files WHERE filename=%s", (pg_fn,))
+                existe = cur.fetchone()
+                raw.close()
+                if existe:
+                    ja_no_pg.append(fn)
+                    continue
+            except Exception:
+                pass
+        # Tenta salvar do disco
+        if filepath.exists():
+            content  = filepath.read_bytes()
+            mimetype = _MIME_MAP.get(filepath.suffix.lower(), "application/octet-stream")
+            ok = _media_persist(pg_fn, content, mimetype)
+            if ok:
+                salvos.append(fn)
+            else:
+                faltando.append(fn)
+        else:
+            faltando.append(fn)
+    return jsonify({"ok": True, "salvos": salvos, "ja_no_pg": ja_no_pg,
+                    "faltando_no_disco": faltando,
+                    "msg": f"{len(salvos)} salvos, {len(faltando)} não encontrados no disco (precisa re-upload)"})
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])

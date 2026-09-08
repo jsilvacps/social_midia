@@ -710,6 +710,20 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <div id="diag-limpeza-result" style="display:none;margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--text)"></div>
     </div>
 
+    <!-- Diagnóstico / Recuperação de Mídia -->
+    <div class="card" style="border-color:rgba(255,100,100,.3)">
+      <p class="card-title">🔧 Recuperar Mídias dos Agendamentos</p>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+        Se posts estão falhando com "Arquivo de mídia não encontrado", clique abaixo para re-salvar as mídias no banco de dados. Depois re-suba os arquivos que estiverem faltando.
+      </p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="reenviarMidias()" id="btn-reenviar-midias">
+          🔄 Recuperar mídias agora
+        </button>
+      </div>
+      <div id="reenviar-status" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
+    </div>
+
     <!-- Textos Prontos -->
     <div class="card">
       <p class="card-title">📝 Textos Prontos</p>
@@ -1972,6 +1986,32 @@ async function waConnDisconnect() {
   await fetch("/api/wa/disconnect", {method:"POST"}).then(r=>r.json()).catch(()=>{});
   toast("✅ Desconectado");
   waConnCheck();
+}
+
+async function reenviarMidias() {
+  const btn    = document.getElementById("btn-reenviar-midias");
+  const status = document.getElementById("reenviar-status");
+  btn.disabled = true;
+  status.textContent = "⏳ Verificando e re-salvando mídias no banco...";
+  try {
+    const r = await fetch("/api/admin/reenviar-midias", {method:"POST"}).then(x=>x.json());
+    if (r.ok) {
+      let txt = `✅ ${r.salvos.length} mídias re-salvas no banco.\n`;
+      txt += `✔️ ${r.ja_no_pg.length} já estavam no banco.\n`;
+      if (r.faltando_no_disco.length) {
+        txt += `❌ ${r.faltando_no_disco.length} não encontradas no disco — você precisa re-fazer o upload desses lotes:\n`;
+        r.faltando_no_disco.forEach(f => txt += `  • ${f}\n`);
+      }
+      status.style.whiteSpace = "pre-wrap";
+      status.textContent = txt;
+      if (r.salvos.length > 0) toast(`✅ ${r.salvos.length} mídias recuperadas!`);
+    } else {
+      status.textContent = "❌ Erro: " + (r.error || "desconhecido");
+    }
+  } catch(e) {
+    status.textContent = "❌ Erro de conexão";
+  }
+  btn.disabled = false;
 }
 
 async function diagLimpeza() {

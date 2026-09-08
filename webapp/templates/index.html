@@ -692,10 +692,16 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         </label>
         <input type="checkbox" id="auto-clear-toggle" style="display:none" onchange="toggleAutoClear(this.checked)">
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora()" id="btn-limpar-agora">
-        🧹 Limpar agora
-      </button>
-      <span id="limpar-status" style="font-size:13px;color:var(--muted);margin-left:10px"></span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora()" id="btn-limpar-agora">
+          🧹 Limpar agora
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="diagLimpeza()" id="btn-diag-limpeza">
+          🔍 Testar API
+        </button>
+        <span id="limpar-status" style="font-size:13px;color:var(--muted)"></span>
+      </div>
+      <div id="diag-limpeza-result" style="display:none;margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--text)"></div>
     </div>
 
     <!-- Textos Prontos -->
@@ -1960,6 +1966,31 @@ async function waConnDisconnect() {
   await fetch("/api/wa/disconnect", {method:"POST"}).then(r=>r.json()).catch(()=>{});
   toast("✅ Desconectado");
   waConnCheck();
+}
+
+async function diagLimpeza() {
+  const btn = document.getElementById("btn-diag-limpeza");
+  const box = document.getElementById("diag-limpeza-result");
+  btn.disabled = true; btn.textContent = "⏳ Testando…";
+  box.style.display = "block";
+  box.textContent = "Aguarde — testando endpoints da Evolution API em 1 grupo…";
+  try {
+    const r = await fetch("/api/limpar-conversas/diagnostico", {method:"POST"}).then(r=>r.json());
+    box.textContent = JSON.stringify(r, null, 2);
+    // Destaca qual endpoint funcionou
+    const ok = (r.resultados||[]).find(x => x.status && x.status < 300);
+    if (ok) {
+      box.style.color = "var(--green)";
+      box.textContent = "✅ ENDPOINT QUE FUNCIONA:\n" + ok.method + " " + ok.url + "\nStatus: " + ok.status + "\n\n" + JSON.stringify(r, null, 2);
+    } else {
+      box.style.color = "var(--danger)";
+      box.textContent = "❌ Nenhum endpoint funcionou:\n\n" + JSON.stringify(r, null, 2);
+    }
+  } catch(e) {
+    box.style.color = "var(--danger)";
+    box.textContent = "❌ Erro: " + e;
+  }
+  btn.disabled = false; btn.textContent = "🔍 Testar API";
 }
 
 async function limparConversasAgora() {

@@ -1173,22 +1173,45 @@ def _auto_clear_loop():
 
 threading.Thread(target=_auto_clear_loop, daemon=True, name="auto_clear").start()
 
-# ── Rota: limpar/sair conversas manualmente ───────────────────────────────────
+# ── Job de limpeza em background (evita timeout do Render) ────────────────────
+_clear_jobs: dict = {}  # uid -> {"status": ..., "done": bool, ...}
+
+def _run_clear_job(uid: int, action: str):
+    _clear_jobs[uid] = {"status": "rodando", "done": False, "cleared": 0,
+                        "total": 0, "msgs_deleted": 0, "error": ""}
+    try:
+        result = wa_clear_all_group_chats(uid, action=action)
+        _clear_jobs[uid].update({
+            "done": True, "status": "concluído",
+            "cleared": result.get("cleared", 0),
+            "total": result.get("total", 0),
+            "msgs_deleted": result.get("msgs_deleted", 0),
+            "error": result.get("error", ""),
+        })
+    except Exception as e:
+        _clear_jobs[uid].update({"done": True, "status": "erro", "error": str(e)})
+
+# ── Rota: limpar/sair conversas manualmente (dispara em background) ───────────
 @app.route("/api/limpar-conversas", methods=["POST"])
 @require_login
 def api_limpar_conversas():
     uid    = session["user_id"]
-    action = (request.json or {}).get("action", "archive")  # "archive" ou "leave"
-    result = wa_clear_all_group_chats(uid, action=action)
-    return jsonify(result)
+    action = (request.json or {}).get("action", "archive")
+    job    = _clear_jobs.get(uid, {})
+    if job and not job.get("done"):
+        return jsonify({"ok": False, "error": "Já está rodando, aguarde terminar."})
+    threading.Thread(target=_run_clear_job, args=(uid, action), daemon=True).start()
+    return jsonify({"ok": True, "background": True,
+                    "msg": "Iniciado em background. Use /api/limpar-conversas/status para acompanhar."})
 
-@app.route("/api/sair-grupos", methods=["POST"])
+@app.route("/api/limpar-conversas/status", methods=["GET"])
 @require_login
-def api_sair_grupos():
-    """Sai de TODOS os grupos WA. Ação irreversível."""
-    uid    = session["user_id"]
-    result = wa_clear_all_group_chats(uid, action="leave")
-    return jsonify(result)
+def api_limpar_status():
+    uid = session["user_id"]
+    job = _clear_jobs.get(uid)
+    if not job:
+        return jsonify({"ok": True, "done": True, "status": "idle"})
+    return jsonify({"ok": True, **job})
 
 # ── Rota: diagnóstico de limpeza (testa 1 grupo e retorna logs) ───────────────
 @app.route("/api/limpar-conversas/diagnostico", methods=["POST"])

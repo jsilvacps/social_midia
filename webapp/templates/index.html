@@ -693,14 +693,19 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <input type="checkbox" id="auto-clear-toggle" style="display:none" onchange="toggleAutoClear(this.checked)">
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora('delete')" id="btn-limpar-agora">
-          🗑️ Apagar mensagens agora
+        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora('archive')" id="btn-limpar-agora">
+          📦 Arquivar grupos
+        </button>
+        <button class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px" onclick="limparConversasAgora('leave')">
+          🚪 Sair de todos os grupos
         </button>
         <button class="btn btn-ghost btn-sm" onclick="diagLimpeza()" id="btn-diag-limpeza">
           🔍 Diagnóstico API
         </button>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">Apaga as mensagens de todos os grupos — você continua membro e pode continuar disparando. Roda automaticamente a cada hora quando ativado acima.</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
+        "Sair de grupos" ✅ <strong>funciona</strong> e libera espaço no celular (confirmado pelo diagnóstico). "Arquivar" apenas oculta. Roda em background sem travar.
+      </p>
       <span id="limpar-status" style="font-size:13px;color:var(--muted)"></span>
       <div id="diag-limpeza-result" style="display:none;margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--text)"></div>
     </div>
@@ -1995,35 +2000,55 @@ async function diagLimpeza() {
 }
 
 async function limparConversasAgora(action) {
-  const confirmMsg = action === "delete"
+  const confirmMsg = action === "leave"
+    ? "⚠️ ATENÇÃO: Isso vai SAIR de TODOS os grupos! Você precisará ser readicionado manualmente. Continuar?"
+    : action === "delete"
     ? "Apagar mensagens de TODOS os grupos? (você continua membro, disparos continuam funcionando)"
     : "Arquivar TODOS os grupos no seu WhatsApp?";
   if (!confirm(confirmMsg)) return;
   const btn = document.getElementById("btn-limpar-agora");
   const status = document.getElementById("limpar-status");
   btn.disabled = true;
-  status.textContent = "⏳ Apagando mensagens de todos os grupos... pode demorar alguns minutos.";
+  status.textContent = "⏳ Iniciando... rodando em background, acompanhe abaixo.";
   try {
     const r = await fetch("/api/limpar-conversas", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({action})
     }).then(x=>x.json());
-    if (r.ok) {
-      if (action === "delete") {
-        status.textContent = `✅ ${r.msgs_deleted || 0} mensagens apagadas em ${r.cleared} de ${r.total} grupos`;
-        toast(`✅ ${r.msgs_deleted || 0} mensagens apagadas!`);
-      } else {
-        status.textContent = `✅ ${r.cleared} de ${r.total} grupos arquivados`;
-        toast(`✅ ${r.cleared} grupos arquivados!`);
-      }
-    } else {
-      status.textContent = "❌ " + (r.error || "Erro — rode o Diagnóstico API para verificar");
+    if (!r.ok) {
+      status.textContent = "❌ " + (r.error || "Erro ao iniciar");
+      btn.disabled = false;
+      return;
     }
+    // Polling a cada 3s até terminar
+    const poll = setInterval(async () => {
+      try {
+        const s = await fetch("/api/limpar-conversas/status").then(x=>x.json());
+        if (s.done) {
+          clearInterval(poll);
+          btn.disabled = false;
+          if (s.status === "erro") {
+            status.textContent = "❌ Erro: " + s.error;
+          } else if (action === "leave") {
+            status.textContent = `✅ Saiu de ${s.cleared} de ${s.total} grupos`;
+            toast(`✅ Saiu de ${s.cleared} grupos!`);
+          } else if (action === "delete") {
+            status.textContent = `✅ ${s.msgs_deleted || 0} mensagens apagadas em ${s.cleared} de ${s.total} grupos`;
+            toast(`✅ ${s.msgs_deleted || 0} mensagens apagadas!`);
+          } else {
+            status.textContent = `✅ ${s.cleared} de ${s.total} grupos arquivados`;
+            toast(`✅ ${s.cleared} grupos arquivados!`);
+          }
+        } else {
+          status.textContent = `⏳ ${s.status}... grupos processados: ${s.cleared || 0}/${s.total || '?'}`;
+        }
+      } catch(e) { /* ignora erros no poll */ }
+    }, 3000);
   } catch(e) {
     status.textContent = "❌ Erro de conexão";
+    btn.disabled = false;
   }
-  btn.disabled = false;
 }
 
 async function toggleAutoClear(enabled) {

@@ -1025,7 +1025,6 @@ def wa_clear_chat(jid: str, cfg: dict) -> tuple[bool, str]:
     instance = cfg.get("evo_instance", "")
     if not base or not instance:
         return False, "não configurado"
-    # Evolution API v2: archiveChat é o único endpoint disponível para ocultar conversas
     url  = f"{base}/chat/archiveChat/{instance}"
     body = {"chat": jid, "archive": True}
     try:
@@ -1037,6 +1036,58 @@ def wa_clear_chat(jid: str, cfg: dict) -> tuple[bool, str]:
     except Exception as e:
         print(f"[archive_chat] {jid}: {e}")
         return False, str(e)
+
+def wa_fetch_messages(jid: str, cfg: dict, limit: int = 100) -> list:
+    """Busca mensagens de um chat via Evolution API v2."""
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    url  = f"{base}/chat/findMessages/{instance}"
+    body = {"where": {"key": {"remoteJid": jid}}, "limit": limit}
+    try:
+        r = requests.post(url, headers=_evo_headers(cfg), json=body, timeout=15)
+        if r.status_code in (200, 201):
+            data = r.json()
+            # Pode vir como lista direta ou dentro de chave "messages"
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return data.get("messages", data.get("records", []))
+        print(f"[fetch_msgs] {jid} → {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        print(f"[fetch_msgs] {jid}: {e}")
+    return []
+
+def wa_delete_message(jid: str, msg: dict, cfg: dict) -> bool:
+    """Apaga uma mensagem via Evolution API v2."""
+    base     = cfg.get("evo_url", "").rstrip("/")
+    instance = cfg.get("evo_instance", "")
+    key = msg.get("key", {})
+    if not key:
+        return False
+    url  = f"{base}/chat/deleteMessage/{instance}"
+    body = {
+        "id":         key.get("id", ""),
+        "remoteJid":  key.get("remoteJid", jid),
+        "fromMe":     key.get("fromMe", False),
+        "participant": key.get("participant", ""),
+    }
+    try:
+        r = requests.delete(url, headers=_evo_headers(cfg), json=body, timeout=10)
+        return r.status_code in (200, 201)
+    except Exception:
+        return False
+
+def wa_delete_all_messages_in_group(jid: str, cfg: dict) -> tuple[int, int]:
+    """Busca e apaga todas as mensagens de um grupo. Retorna (apagadas, total)."""
+    msgs = wa_fetch_messages(jid, cfg, limit=200)
+    if not msgs:
+        return 0, 0
+    deleted = 0
+    for msg in msgs:
+        if wa_delete_message(jid, msg, cfg):
+            deleted += 1
+        time.sleep(0.15)  # evita rate limit
+    return deleted, len(msgs)
 
 def wa_leave_group(jid: str, cfg: dict) -> tuple[bool, str]:
     """Sai de um grupo WA via Evolution API v2."""
@@ -1056,32 +1107,48 @@ def wa_leave_group(jid: str, cfg: dict) -> tuple[bool, str]:
         print(f"[leave_group] {jid}: {e}")
         return False, str(e)
 
-def wa_clear_all_group_chats(user_id: int, action: str = "archive") -> dict:
-    """Processa todos os grupos WA: action='archive' arquiva, action='leave' sai do grupo."""
+def wa_clear_all_group_chats(user_id: int, action: str = "delete") -> dict:
+    """Processa todos os grupos WA.
+    action='delete'  → apaga mensagens uma por uma (libera espaço, mantém grupo)
+    action='archive' → arquiva/oculta (não libera espaço)
+    action='leave'   → sai do grupo (irreversível)
+    """
     cfg = load_config(user_id=user_id)
     groups, err = wa_get_groups(cfg)
     if not groups:
         return {"ok": False, "error": err or "Sem grupos"}
-    total    = len(groups)
-    ok_count = 0
-    last_err = ""
+    total        = len(groups)
+    ok_count     = 0
+    msgs_deleted = 0
+    last_err     = ""
     for g in groups:
         jid = g.get("id", "")
-        if jid:
-            if action == "leave":
-                ok, e = wa_leave_group(jid, cfg)
-            else:
-                ok, e = wa_clear_chat(jid, cfg)
+        if not jid:
+            continue
+        if action == "delete":
+            deleted, found = wa_delete_all_messages_in_group(jid, cfg)
+            if found > 0:
+                ok_count += 1
+            msgs_deleted += deleted
+        elif action == "leave":
+            ok, e = wa_leave_group(jid, cfg)
             if ok:
                 ok_count += 1
             elif e:
                 last_err = e
-        time.sleep(0.3)  # evita rate limit
-    return {"ok": True, "total": total, "cleared": ok_count, "action": action,
+        else:  # archive
+            ok, e = wa_clear_chat(jid, cfg)
+            if ok:
+                ok_count += 1
+            elif e:
+                last_err = e
+        time.sleep(0.3)
+    return {"ok": True, "total": total, "cleared": ok_count,
+            "msgs_deleted": msgs_deleted, "action": action,
             "error": last_err if ok_count == 0 else ""}
 
 def _auto_clear_loop():
-    """Job que limpa conversas de grupo a cada hora para todos os usuários com auto_clear_chats=1."""
+    """Job que apaga mensagens dos grupos a cada hora para usuários com auto_clear_chats=1."""
     while True:
         time.sleep(3600)  # aguarda 1 hora antes do primeiro ciclo
         try:
@@ -1172,7 +1239,23 @@ def api_limpar_diagnostico():
             swagger_info = {"ok": False, "status": sw.status_code}
     except Exception as e:
         swagger_info = {"ok": False, "error": str(e)}
-    return jsonify({"jid_testado": jid, "resultados": results, "swagger": swagger_info})
+    # Testa findMessages (necessário para deleção automática)
+    find_test = None
+    try:
+        url_find = f"{base}/chat/findMessages/{instance}"
+        body_find = {"where": {"key": {"remoteJid": jid}}, "limit": 5}
+        rf = requests.post(url_find, headers=_evo_headers(cfg), json=body_find, timeout=15)
+        if rf.status_code in (200, 201):
+            data = rf.json()
+            msgs = data if isinstance(data, list) else data.get("messages", data.get("records", []))
+            find_test = {"ok": True, "status": rf.status_code, "mensagens_encontradas": len(msgs),
+                         "exemplo": msgs[0] if msgs else None}
+        else:
+            find_test = {"ok": False, "status": rf.status_code, "response": rf.text[:300]}
+    except Exception as e:
+        find_test = {"ok": False, "error": str(e)}
+    return jsonify({"jid_testado": jid, "resultados": results,
+                    "swagger": swagger_info, "findMessages": find_test})
 
 # ── Rota: toggle limpeza automática ───────────────────────────────────────────
 @app.route("/api/config/auto-clear-chats", methods=["POST"])

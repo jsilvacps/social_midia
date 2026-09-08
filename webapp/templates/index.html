@@ -693,17 +693,14 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <input type="checkbox" id="auto-clear-toggle" style="display:none" onchange="toggleAutoClear(this.checked)">
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora('archive')" id="btn-limpar-agora">
-          📦 Arquivar grupos
-        </button>
-        <button class="btn btn-sm" style="background:#c0392b;color:#fff" onclick="limparConversasAgora('leave')" id="btn-sair-grupos">
-          🚪 Sair de todos os grupos
+        <button class="btn btn-secondary btn-sm" onclick="limparConversasAgora('delete')" id="btn-limpar-agora">
+          🗑️ Apagar mensagens agora
         </button>
         <button class="btn btn-ghost btn-sm" onclick="diagLimpeza()" id="btn-diag-limpeza">
           🔍 Diagnóstico API
         </button>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">"Sair de grupos" remove completamente do celular. "Arquivar" apenas oculta na lista principal.</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">Apaga as mensagens de todos os grupos — você continua membro e pode continuar disparando. Roda automaticamente a cada hora quando ativado acima.</p>
       <span id="limpar-status" style="font-size:13px;color:var(--muted)"></span>
       <div id="diag-limpeza-result" style="display:none;margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--text)"></div>
     </div>
@@ -1998,14 +1995,14 @@ async function diagLimpeza() {
 }
 
 async function limparConversasAgora(action) {
-  const msg = action === "leave"
-    ? "⚠️ ATENÇÃO: Isso vai SAIR de TODOS os grupos! Você precisará ser readicionado manualmente. Continuar?"
-    : "Arquivar TODOS os grupos no seu WhatsApp? (ficam na pasta Arquivadas)";
-  if (!confirm(msg)) return;
-  const btn = document.getElementById(action === "leave" ? "btn-sair-grupos" : "btn-limpar-agora");
+  const confirmMsg = action === "delete"
+    ? "Apagar mensagens de TODOS os grupos? (você continua membro, disparos continuam funcionando)"
+    : "Arquivar TODOS os grupos no seu WhatsApp?";
+  if (!confirm(confirmMsg)) return;
+  const btn = document.getElementById("btn-limpar-agora");
   const status = document.getElementById("limpar-status");
   btn.disabled = true;
-  status.textContent = "⏳ Processando...";
+  status.textContent = "⏳ Apagando mensagens de todos os grupos... pode demorar alguns minutos.";
   try {
     const r = await fetch("/api/limpar-conversas", {
       method:"POST",
@@ -2013,11 +2010,15 @@ async function limparConversasAgora(action) {
       body: JSON.stringify({action})
     }).then(x=>x.json());
     if (r.ok) {
-      const label = action === "leave" ? "grupos saídos" : "arquivados";
-      status.textContent = `✅ ${r.cleared} de ${r.total} ${label}`;
-      toast(`✅ ${r.cleared} grupos ${label}!`);
+      if (action === "delete") {
+        status.textContent = `✅ ${r.msgs_deleted || 0} mensagens apagadas em ${r.cleared} de ${r.total} grupos`;
+        toast(`✅ ${r.msgs_deleted || 0} mensagens apagadas!`);
+      } else {
+        status.textContent = `✅ ${r.cleared} de ${r.total} grupos arquivados`;
+        toast(`✅ ${r.cleared} grupos arquivados!`);
+      }
     } else {
-      status.textContent = "❌ " + (r.error || "Erro");
+      status.textContent = "❌ " + (r.error || "Erro — rode o Diagnóstico API para verificar");
     }
   } catch(e) {
     status.textContent = "❌ Erro de conexão";
@@ -2032,7 +2033,7 @@ async function toggleAutoClear(enabled) {
     body: JSON.stringify({enabled})
   }).then(x=>x.json()).catch(()=>({ok:false}));
   if (r.ok) {
-    toast(enabled ? "✅ Limpeza automática ativada (a cada hora)" : "✅ Limpeza automática desativada");
+    toast(enabled ? "✅ Apagar mensagens automático ativado (a cada hora)" : "✅ Limpeza automática desativada");
   }
 }
 

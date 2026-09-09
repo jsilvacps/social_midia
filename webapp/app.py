@@ -523,7 +523,7 @@ def wa_get_groups(cfg) -> tuple[list, str]:
     try:
         r = requests.get(
             f"{base}/group/fetchAllGroups/{instance}?getParticipants=false",
-            headers=_evo_headers(cfg), timeout=15
+            headers=_evo_headers(cfg), timeout=60
         )
         if r.status_code != 200:
             return [], f"HTTP {r.status_code}"
@@ -1077,7 +1077,7 @@ def wa_fetch_messages(jid: str, cfg: dict, limit: int = 100) -> list:
     url  = f"{base}/chat/findMessages/{instance}"
     body = {"where": {"key": {"remoteJid": jid}}, "limit": limit}
     try:
-        r = requests.post(url, headers=_evo_headers(cfg), json=body, timeout=15)
+        r = requests.post(url, headers=_evo_headers(cfg), json=body, timeout=30)
         if r.status_code in (200, 201):
             data = r.json()
             # Pode vir como lista direta ou dentro de chave "messages"
@@ -1532,7 +1532,7 @@ def admin_wa_qr(uid):
         return jsonify({"ok": False, "error": "Instância não configurada"})
     try:
         r = requests.get(f"{base}/instance/connect/{instance}",
-                         headers={"apikey": apikey}, timeout=15)
+                         headers={"apikey": apikey}, timeout=30)
         data = r.json()
         print(f"[wa-qr] uid={uid}: {r.status_code} keys={list(data.keys())}")
         # QR pode vir em vários formatos conforme versão do Evolution
@@ -1562,7 +1562,7 @@ def admin_wa_pairing(uid):
             f"{base}/instance/pairingCode/{instance}",
             headers={"apikey": apikey, "Content-Type": "application/json"},
             json={"number": phone},
-            timeout=15
+            timeout=30
         )
         d = r.json()
         print(f"[wa-pairing] uid={uid} phone={phone}: {r.status_code} {d}")
@@ -2785,7 +2785,7 @@ def api_wa_qr_user():
         return jsonify({"ok": False, "error": "Não configurado"})
     try:
         r = requests.get(f"{base}/instance/connect/{instance}",
-                         headers={"apikey": token}, timeout=15)
+                         headers={"apikey": token}, timeout=30)
         if r.status_code == 200:
             d = r.json()
             qr = d.get("base64") or d.get("qrcode", {}).get("base64", "")
@@ -2810,7 +2810,7 @@ def api_wa_pairing_user():
         # Tenta endpoint v2
         r = requests.post(f"{base}/instance/pairingCode/{instance}",
                           headers={"apikey": token, "Content-Type": "application/json"},
-                          json={"number": phone}, timeout=15)
+                          json={"number": phone}, timeout=30)
         print(f"[pairing-code user] {r.status_code} {r.text[:300]}")
         if r.status_code == 404:
             # Tenta endpoint alternativo
@@ -2834,7 +2834,7 @@ def api_wa_disconnect_user():
         return jsonify({"ok": False, "error": "Não configurado"})
     try:
         requests.delete(f"{base}/instance/delete/{instance}",
-                        headers={"apikey": token}, timeout=15)
+                        headers={"apikey": token}, timeout=30)
         return jsonify({"ok": True})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
@@ -3389,3 +3389,4 @@ if __name__ == "__main__":
     print(f"  📱  Celular: http://{local_ip}:{port}")
     print("═" * 52 + "\n")
     app.run(host=host, port=port, debug=False, threaded=True)
+

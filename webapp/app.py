@@ -982,55 +982,12 @@ def _in_suspend_window(suspend_from: str, suspend_to: str, now_hm: str) -> bool:
         return False
 
 # ── Scheduler Thread ───────────────────────────────────────────────────────────
-_last_resume_check = {}  # user_id -> última vez que reativou suspensos
-
-def _reschedule_suspended(now_dt, now_hm):
-    """Quando a pausa termina, reagenda posts suspensos com 15 min de intervalo."""
-    try:
-        conn = db()
-        suspended = conn.execute(
-            "SELECT id, user_id, suspend_from, suspend_to FROM posts WHERE status='suspended'"
-        ).fetchall()
-        conn.close()
-        # Agrupa por usuário
-        by_user = {}
-        for row in suspended:
-            sf = row["suspend_from"] or ""
-            st = row["suspend_to"]   or ""
-            # Só reativa se ACABOU a pausa (não está mais na janela)
-            if sf and st and not _in_suspend_window(sf, st, now_hm):
-                uid = row["user_id"] if "user_id" in row.keys() else 0
-                by_user.setdefault(uid, []).append(row)
-        for uid, posts in by_user.items():
-            # Só reativa uma vez por ciclo de pausa (evita ficar reagendando a cada 30s)
-            last = _last_resume_check.get(uid)
-            if last and (now_dt - last).total_seconds() < 1800:  # 30 min de cooldown
-                continue
-            _last_resume_check[uid] = now_dt
-            print(f"[scheduler] pausa terminou user={uid}: reagendando {len(posts)} posts suspensos")
-            c = db()
-            for i, row in enumerate(posts):
-                # Distribui com 15 min de intervalo a partir de agora
-                new_at = (now_dt + __import__('datetime').timedelta(minutes=i * 15)).strftime("%Y-%m-%dT%H:%M")
-                c.execute(
-                    "UPDATE posts SET status='pending', scheduled_at=? WHERE id=? AND status='suspended'",
-                    (new_at, row["id"])
-                )
-                print(f"[scheduler] post {row['id']} reativado para {new_at}")
-            c.commit()
-            c.close()
-    except Exception as e:
-        print(f"[scheduler] erro ao reativar suspensos: {e}")
-
 def _scheduler_loop():
     while True:
         try:
             now_dt   = now_brasilia()
             now_str  = now_dt.strftime("%Y-%m-%dT%H:%M")
             now_hm   = now_dt.strftime("%H:%M")
-
-            # Verifica se algum post suspenso pode ser reativado (pausa terminou)
-            _reschedule_suspended(now_dt, now_hm)
 
             conn = db()
             # Posts pendentes prontos para enviar

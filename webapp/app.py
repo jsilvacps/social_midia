@@ -574,49 +574,56 @@ def _read_media_bytes(filepath: Path, db_filename: str) -> bytes | None:
             print(f"[read_media] ERRO PG ao ler {fname}: {e}")
     return None
 
+def _wa_post_with_retry(url, headers, body, timeout, retries=2, delay=5):
+    """POST com retry automático em caso de timeout ou erro de conexão."""
+    last_err = ""
+    for attempt in range(retries + 1):
+        try:
+            r = requests.post(url, headers=headers, json=body, timeout=timeout)
+            if r.status_code in (200, 201):
+                return True, ""
+            # Não retenta erros HTTP (4xx/5xx) — só timeouts
+            return False, f"HTTP {r.status_code}: {r.text[:300]}"
+        except requests.exceptions.Timeout:
+            last_err = f"Timeout após {timeout}s"
+            if attempt < retries:
+                print(f"[wa_send] timeout, tentativa {attempt+2}/{retries+1} em {delay}s")
+                time.sleep(delay)
+        except Exception as exc:
+            last_err = str(exc)
+            if attempt < retries:
+                time.sleep(delay)
+    return False, last_err
+
 def wa_send_image(group_id, caption, filepath, cfg, db_filename=""):
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
-    try:
-        content = _read_media_bytes(filepath, db_filename)
-        if content is None:
-            return False, "Arquivo de mídia não encontrado (verifique se foi enviado ao banco)"
-        b64 = base64.b64encode(content).decode()
-        r = requests.post(
-            f"{base}/message/sendMedia/{instance}",
-            headers=_evo_headers(cfg),
-            json={"number": group_id, "mediatype": "image",
-                  "mimetype": "image/jpeg", "caption": caption,
-                  "media": b64},
-            timeout=120
-        )
-        if r.status_code in (200, 201):
-            return True, ""
-        return False, f"HTTP {r.status_code}: {r.text[:300]}"
-    except Exception as exc:
-        return False, str(exc)
+    content = _read_media_bytes(filepath, db_filename)
+    if content is None:
+        return False, "Arquivo de mídia não encontrado (verifique se foi enviado ao banco)"
+    b64 = base64.b64encode(content).decode()
+    return _wa_post_with_retry(
+        f"{base}/message/sendMedia/{instance}",
+        _evo_headers(cfg),
+        {"number": group_id, "mediatype": "image",
+         "mimetype": "image/jpeg", "caption": caption, "media": b64},
+        timeout=120
+    )
 
 def wa_send_video(group_id, caption, filepath, cfg, db_filename=""):
     base     = cfg.get("evo_url", "").rstrip("/")
     instance = cfg.get("evo_instance", "")
-    try:
-        content = _read_media_bytes(filepath, db_filename)
-        if content is None:
-            return False, "Arquivo de mídia não encontrado (verifique se foi enviado ao banco)"
-        b64 = base64.b64encode(content).decode()
-        r = requests.post(
-            f"{base}/message/sendMedia/{instance}",
-            headers=_evo_headers(cfg),
-            json={"number": group_id, "mediatype": "video",
-                  "mimetype": "video/mp4", "caption": caption,
-                  "media": b64},
-            timeout=180
-        )
-        if r.status_code in (200, 201):
-            return True, ""
-        return False, f"HTTP {r.status_code}: {r.text[:300]}"
-    except Exception as exc:
-        return False, str(exc)
+    content = _read_media_bytes(filepath, db_filename)
+    if content is None:
+        return False, "Arquivo de mídia não encontrado (verifique se foi enviado ao banco)"
+    b64 = base64.b64encode(content).decode()
+    return _wa_post_with_retry(
+        f"{base}/message/sendMedia/{instance}",
+        _evo_headers(cfg),
+        {"number": group_id, "mediatype": "video",
+         "mimetype": "video/mp4", "caption": caption, "media": b64},
+        timeout=180
+    )
 
 def wa_send_text(group_id, text, cfg):
     base     = cfg.get("evo_url", "").rstrip("/")

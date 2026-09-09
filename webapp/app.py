@@ -1027,6 +1027,30 @@ def _scheduler_loop():
 
 threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
 
+def _evo_keepalive_loop():
+    """Pinga a Evolution API a cada 8 min para evitar cold start no Railway."""
+    time.sleep(60)  # aguarda app subir
+    while True:
+        try:
+            conn = db()
+            cfgs = conn.execute("SELECT id FROM users WHERE plan != 'inactive'").fetchall()
+            conn.close()
+            for u in cfgs:
+                uid = u["id"] if hasattr(u, "__getitem__") else u[0]
+                try:
+                    cfg  = load_config(user_id=uid)
+                    base = cfg.get("evo_url", "").rstrip("/")
+                    if base:
+                        requests.get(f"{base}/", timeout=10)
+                        break  # basta pingar uma vez — todos usam a mesma API
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        time.sleep(480)  # 8 minutos
+
+threading.Thread(target=_evo_keepalive_loop, daemon=True, name="evo_keepalive").start()
+
 # ── Limpeza automática de conversas WA ────────────────────────────────────────
 def wa_clear_chat(jid: str, cfg: dict) -> tuple[bool, str]:
     """Arquiva conversa no WhatsApp via Evolution API v2 (archiveChat)."""

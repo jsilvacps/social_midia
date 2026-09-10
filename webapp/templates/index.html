@@ -720,6 +720,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <button class="btn btn-secondary btn-sm" onclick="reenviarMidias()" id="btn-reenviar-midias">
           🔄 Recuperar mídias agora
         </button>
+        <button class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px" onclick="limparMidiasOrfas()">
+          🗑️ Limpar mídias antigas (libera espaço)
+        </button>
       </div>
       <div id="reenviar-status" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
     </div>
@@ -1986,6 +1989,23 @@ async function waConnDisconnect() {
   await fetch("/api/wa/disconnect", {method:"POST"}).then(r=>r.json()).catch(()=>{});
   toast("✅ Desconectado");
   waConnCheck();
+}
+
+async function limparMidiasOrfas() {
+  if (!confirm("Apagar do banco todas as mídias que NÃO estão em posts ativos? Isso libera espaço no PostgreSQL.")) return;
+  const status = document.getElementById("reenviar-status");
+  status.textContent = "⏳ Limpando mídias antigas do banco...";
+  try {
+    const r = await fetch("/api/admin/limpar-midias-orfas", {method:"POST"}).then(x=>x.json());
+    if (r.ok) {
+      status.textContent = `✅ ${r.removidas} mídias removidas — liberou ${r.liberado_mb}MB (${r.liberado_kb}KB). Em uso: ${r.em_uso} arquivos.`;
+      toast(`✅ ${r.liberado_mb}MB liberados no banco!`);
+    } else {
+      status.textContent = "❌ " + (r.error || "Erro");
+    }
+  } catch(e) {
+    status.textContent = "❌ Erro de conexão";
+  }
 }
 
 async function reenviarMidias() {

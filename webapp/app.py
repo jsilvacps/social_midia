@@ -2001,6 +2001,45 @@ def api_diagnostico_midia():
             result["pg_error"] = str(e)
     return jsonify(result)
 
+# ── Limpeza de mídias órfãs no PG (libera espaço em disco) ───────────────────
+@app.route("/api/admin/limpar-midias-orfas", methods=["POST"])
+@require_admin
+def api_limpar_midias_orfas():
+    """Remove do PG mídias que não estão em nenhum post pendente/sending/queued."""
+    if not USE_PG:
+        return jsonify({"ok": False, "error": "Sem PostgreSQL"})
+    try:
+        raw = psycopg2.connect(DATABASE_URL)
+        cur = raw.cursor()
+        # Pega todos os filenames em uso (posts ativos)
+        cur.execute("""
+            SELECT DISTINCT filename FROM posts
+            WHERE status IN ('pending','queued','sending','suspended')
+        """)
+        em_uso_raw = {r[0] for r in cur.fetchall()}
+        # Normaliza: remove prefixo __lib__
+        em_uso = set()
+        for fn in em_uso_raw:
+            if fn and fn.startswith("__lib__"):
+                em_uso.add(fn[len("__lib__"):])
+            elif fn:
+                em_uso.add(fn)
+        # Lista tudo no media_files
+        cur.execute("SELECT filename, size FROM media_files")
+        todas = cur.fetchall()
+        orfas = [(r[0], r[1]) for r in todas if r[0] not in em_uso]
+        total_kb = sum((r[1] or 0) for r in orfas) // 1024
+        # Apaga órfãs
+        for fn, _ in orfas:
+            cur.execute("DELETE FROM media_files WHERE filename=%s", (fn,))
+        raw.commit()
+        raw.close()
+        return jsonify({"ok": True, "removidas": len(orfas),
+                        "liberado_kb": total_kb, "liberado_mb": total_kb // 1024,
+                        "em_uso": len(em_uso), "total_era": len(todas)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
 # ── Re-salva mídias de posts pendentes no PG (recover após restart) ───────────
 @app.route("/api/admin/reenviar-midias", methods=["POST"])
 @require_login

@@ -3452,18 +3452,14 @@ def webhook_mensagens():
         # Descobre qual instância recebeu (pelo instanceName no payload)
         instance_name = data.get("instance", "") or data.get("instanceName", "")
 
-        # Busca config do usuário dono dessa instância
+        # Usa apenas a config do admin para encaminhamento
         conn = db()
-        row = conn.execute(
-            "SELECT user_id FROM user_configs WHERE config_json LIKE ?",
-            (f'%"{instance_name}"%',)
-        ).fetchone()
+        admin = conn.execute("SELECT id FROM users WHERE is_admin=1 LIMIT 1").fetchone()
         conn.close()
-
-        if not row:
+        if not admin:
             return jsonify({"ok": True})
 
-        cfg = load_config(user_id=row["user_id"] if hasattr(row, "__getitem__") else row[0])
+        cfg = load_config(user_id=admin["id"] if hasattr(admin, "__getitem__") else admin[0])
         base     = cfg.get("evo_url", "").rstrip("/")
         instance = cfg.get("evo_instance", "")
         token    = cfg.get("evo_token", "")

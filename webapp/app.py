@@ -3431,10 +3431,13 @@ def webhook_mensagens():
     """Recebe webhook da Evolution API e encaminha msgs privadas para FORWARD_TO."""
     try:
         data = request.get_json(silent=True) or {}
+        print(f"[webhook_mensagens] payload recebido: {json.dumps(data)[:500]}")
         event = data.get("event", "")
+        print(f"[webhook_mensagens] event={event}")
 
         # Só processa eventos de mensagem recebida
         if event not in ("messages.upsert", "MESSAGES_UPSERT"):
+            print(f"[webhook_mensagens] ignorando evento: {event}")
             return jsonify({"ok": True})
 
         msg_data = data.get("data", {})

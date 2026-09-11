@@ -1028,6 +1028,20 @@ def _scheduler_loop():
 
 threading.Thread(target=_scheduler_loop, daemon=True, name="scheduler").start()
 
+def _render_keepalive_loop():
+    """Pinga o próprio app no Render a cada 8 min para evitar cold start."""
+    time.sleep(90)  # aguarda app subir completamente
+    render_url = "https://social-midia.onrender.com/"
+    while True:
+        try:
+            requests.get(render_url, timeout=15)
+            print("[render_keepalive] ping ok")
+        except Exception as e:
+            print(f"[render_keepalive] erro: {e}")
+        time.sleep(480)  # 8 minutos
+
+threading.Thread(target=_render_keepalive_loop, daemon=True, name="render_keepalive").start()
+
 def _evo_keepalive_loop():
     """Pinga a Evolution API a cada 8 min para evitar cold start no Railway."""
     time.sleep(60)  # aguarda app subir

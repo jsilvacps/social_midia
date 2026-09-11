@@ -999,14 +999,34 @@ def _scheduler_loop():
             # NÃO recupera 'sending' — esses podem estar rodando normalmente com muitos grupos
             stale = conn.execute(
                 "SELECT id, suspend_from, suspend_to FROM posts WHERE status='queued' AND scheduled_at<=?",
-                ((now_dt - __import__('datetime').timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M") + ":59",)
+                ((now_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M") + ":59",)
+            ).fetchall()
+            # Posts suspensos que saíram da janela de pausa → auto-resume com 15 min entre cada
+            suspended = conn.execute(
+                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='suspended'"
             ).fetchall()
             conn.close()
+
+            # Auto-resume: reescalona posts suspensos com intervalo de 15 min
+            resume_offset = 0
+            for row in suspended:
+                sf = row["suspend_from"] or ""
+                st = row["suspend_to"]   or ""
+                if not _in_suspend_window(sf, st, now_hm):
+                    new_sched = (now_dt + timedelta(minutes=resume_offset)).strftime("%Y-%m-%dT%H:%M:00")
+                    c = db()
+                    affected = c.execute(
+                        "UPDATE posts SET status='pending', scheduled_at=? WHERE id=? AND status='suspended'",
+                        (new_sched, row["id"])
+                    ).rowcount
+                    c.commit(); c.close()
+                    if affected:
+                        resume_offset += 15
+
             for row in list(rows) + list(stale):
                 sf = row["suspend_from"] or ""
                 st = row["suspend_to"]   or ""
                 if _in_suspend_window(sf, st, now_hm):
-                    print(f"[scheduler] post {row['id']} suspenso ({now_hm} em {sf}–{st})")
                     c = db()
                     c.execute("UPDATE posts SET status='suspended' WHERE id=?", (row["id"],))
                     c.commit(); c.close()
@@ -1220,6 +1240,36 @@ def _auto_clear_loop():
             print(f"[auto_clear] {e}")
 
 threading.Thread(target=_auto_clear_loop, daemon=True, name="auto_clear").start()
+
+# ── Job diário: limpeza de mídias órfãs no PostgreSQL ─────────────────────────
+def _limpar_midias_orfas_loop():
+    """Remove arquivos de media_files que não estão mais referenciados por nenhum post.
+    Roda uma vez ao dia (na primeira vez aguarda 1 hora após iniciar)."""
+    time.sleep(3600)  # aguarda 1 hora antes do primeiro ciclo
+    while True:
+        if USE_PG:
+            try:
+                raw = psycopg2.connect(DATABASE_URL)
+                cur = raw.cursor()
+                # Filenames em uso por posts (pendentes, ativos ou já enviados nos últimos 30 dias)
+                cur.execute("""
+                    DELETE FROM media_files
+                    WHERE filename NOT IN (
+                        SELECT DISTINCT filename FROM posts
+                        WHERE filename IS NOT NULL AND filename <> ''
+                    )
+                    AND uploaded_at < NOW() - INTERVAL '1 day'
+                """)
+                deleted = cur.rowcount
+                raw.commit()
+                raw.close()
+                if deleted:
+                    print(f"[midias_orfas] {deleted} arquivo(s) removido(s) do banco")
+            except Exception as e:
+                print(f"[midias_orfas] erro: {e}")
+        time.sleep(86400)  # roda a cada 24 horas
+
+threading.Thread(target=_limpar_midias_orfas_loop, daemon=True, name="midias_orfas").start()
 
 # ── Job de limpeza em background (evita timeout do Render) ────────────────────
 _clear_jobs: dict = {}  # uid -> {"status": ..., "done": bool, ...}
@@ -1617,6 +1667,9 @@ def admin_wa_status(uid):
                         break
         except Exception:
             pass
+        # Salva o número na config para uso interno (ex: webhook de menções em grupos)
+        if phone:
+            save_config({"evo_instance_number": phone}, user_id=uid)
         return jsonify({"ok": True, "state": state, "instance": instance, "phone": phone})
     except Exception as exc:
         return jsonify({"ok": True, "state": "error", "error": str(exc)})
@@ -3428,16 +3481,14 @@ FORWARD_TO = "5519978005731"  # número que recebe os encaminhamentos
 
 @app.route("/webhook/mensagens", methods=["POST"])
 def webhook_mensagens():
-    """Recebe webhook da Evolution API e encaminha msgs privadas para FORWARD_TO."""
+    """Recebe webhook da Evolution API e encaminha msgs privadas para FORWARD_TO.
+    Também encaminha menções com @ ao número da instância em grupos."""
     try:
         data = request.get_json(silent=True) or {}
-        print(f"[webhook_mensagens] payload recebido: {json.dumps(data)[:500]}")
         event = data.get("event", "")
-        print(f"[webhook_mensagens] event={event}")
 
         # Só processa eventos de mensagem recebida
         if event not in ("messages.upsert", "MESSAGES_UPSERT"):
-            print(f"[webhook_mensagens] ignorando evento: {event}")
             return jsonify({"ok": True})
 
         msg_data = data.get("data", {})
@@ -3445,24 +3496,58 @@ def webhook_mensagens():
         remote_jid = key.get("remoteJid", "")
         from_me = key.get("fromMe", False)
 
-        # Ignora mensagens enviadas por mim e mensagens de grupos
-        if from_me or remote_jid.endswith("@g.us"):
+        # Ignora mensagens enviadas por mim
+        if from_me:
             return jsonify({"ok": True})
+
+        is_group = remote_jid.endswith("@g.us")
+
+        # Para grupos: só processa se houver menção ao nosso número
+        if is_group:
+            msg_content = data.get("data", {}).get("message", {})
+            ctx = (msg_content.get("extendedTextMessage", {}).get("contextInfo")
+                   or msg_content.get("imageMessage", {}).get("contextInfo")
+                   or msg_content.get("videoMessage", {}).get("contextInfo")
+                   or {})
+            mentioned = ctx.get("mentionedJid") or []
+            # Usa config do admin para saber qual número é o nosso
+            conn = db()
+            admin = conn.execute("SELECT id FROM users WHERE is_admin=1 LIMIT 1").fetchone()
+            conn.close()
+            if not admin:
+                return jsonify({"ok": True})
+            admin_id = admin["id"] if hasattr(admin, "__getitem__") else admin[0]
+            cfg = load_config(user_id=admin_id)
+            # Nosso número = instância configurada (ex: 5519994590635)
+            our_number = cfg.get("evo_instance_number", "")
+            if not our_number:
+                # Tenta extrair da config ou ignora grupo
+                return jsonify({"ok": True})
+            our_jid = f"{our_number}@s.whatsapp.net"
+            if not any(our_number in m or m == our_jid for m in mentioned):
+                return jsonify({"ok": True})
 
         # Formata número do remetente
-        sender_number = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
-
-        # Descobre qual instância recebeu (pelo instanceName no payload)
-        instance_name = data.get("instance", "") or data.get("instanceName", "")
+        # Em grupos, o remetente real está em key.participant
+        if is_group:
+            participant = key.get("participant", remote_jid)
+            sender_number = participant.replace("@s.whatsapp.net", "").replace("@c.us", "")
+            group_name = f" (grupo)"
+        else:
+            sender_number = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+            group_name = ""
 
         # Usa apenas a config do admin para encaminhamento
-        conn = db()
-        admin = conn.execute("SELECT id FROM users WHERE is_admin=1 LIMIT 1").fetchone()
-        conn.close()
-        if not admin:
-            return jsonify({"ok": True})
+        if not is_group:
+            # Para grupos já carregamos acima; para privadas carrega aqui
+            conn = db()
+            admin = conn.execute("SELECT id FROM users WHERE is_admin=1 LIMIT 1").fetchone()
+            conn.close()
+            if not admin:
+                return jsonify({"ok": True})
+            admin_id = admin["id"] if hasattr(admin, "__getitem__") else admin[0]
+            cfg = load_config(user_id=admin_id)
 
-        cfg = load_config(user_id=admin["id"] if hasattr(admin, "__getitem__") else admin[0])
         base     = cfg.get("evo_url", "").rstrip("/")
         instance = cfg.get("evo_instance", "")
         token    = cfg.get("evo_token", "")
@@ -3472,7 +3557,7 @@ def webhook_mensagens():
         headers = {"apikey": token, "Content-Type": "application/json"}
 
         msg_content = msg_data.get("message", {})
-        prefix = f"📩 *De: +{sender_number}*\n"
+        prefix = f"📩 *De: +{sender_number}*{group_name}\n"
 
         # ── Texto ──
         text = (msg_content.get("conversation")
@@ -3542,8 +3627,8 @@ def webhook_mensagens():
             requests.post(f"{base}/message/sendText/{instance}",
                           headers=headers, json=body, timeout=20)
 
-    except Exception as e:
-        print(f"[webhook_mensagens] erro: {e}")
+    except Exception:
+        pass
 
     return jsonify({"ok": True})
 

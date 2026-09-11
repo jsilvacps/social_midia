@@ -1003,7 +1003,7 @@ def _scheduler_loop():
             ).fetchall()
             # Posts suspensos que saíram da janela de pausa → auto-resume com 15 min entre cada
             suspended = conn.execute(
-                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='suspended'"
+                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='suspended' ORDER BY scheduled_at ASC"
             ).fetchall()
             conn.close()
 

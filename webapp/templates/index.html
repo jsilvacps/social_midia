@@ -1531,7 +1531,7 @@ function buildBatchCard(batchKey, posts) {
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:0 14px 10px;justify-content:flex-end">
-      ${batchId && posts.some(p=>p.status==='pending') ? `<button class="btn btn-ghost btn-sm" onclick="abrirEditarLote(this)" data-batch="${batchId}" data-caption="${esc(caption)}" data-at="${next?esc(next.scheduled_at):''}">✏️ Editar</button>` : ""}
+      ${batchId && posts.some(p=>p.status==='pending') ? `<button class="btn btn-ghost btn-sm" onclick="abrirEditarLote(this)" data-batch="${batchId}" data-caption="${esc(caption)}" data-at="${next?esc(next.scheduled_at):''}" data-sf="${esc(posts[0].suspend_from||'')}" data-st="${esc(posts[0].suspend_to||'')}">✏️ Editar</button>` : ""}
       ${!isSolo && batchId ? `<button class="btn btn-danger btn-sm" onclick="deleteBatch('${batchId}')">🗑 Excluir lote</button>` : ""}
     </div>
     <div id="${uid}-body" style="display:none;border-top:1px solid var(--border)">
@@ -1779,12 +1779,20 @@ function abrirEditarLote(btnEl) {
   const batchId    = btnEl.dataset.batch;
   const caption    = btnEl.dataset.caption || "";
   const scheduledAt= btnEl.dataset.at || "";
+  const sf         = btnEl.dataset.sf || "";
+  const st         = btnEl.dataset.st || "";
   _editBatchId = batchId;
   document.getElementById("edit-batch-caption").value = caption;
-  // Formata para datetime-local (YYYY-MM-DDTHH:MM)
   const dt = scheduledAt ? scheduledAt.substring(0,16) : "";
   document.getElementById("edit-batch-dt").value = dt;
   document.getElementById("edit-batch-msg").style.display = "none";
+  // Pausa noturna
+  const sfEl = document.getElementById("edit-batch-sf");
+  const stEl = document.getElementById("edit-batch-st");
+  const chk  = document.getElementById("edit-batch-suspend-enabled");
+  if(sfEl) sfEl.value = sf;
+  if(stEl) stEl.value = st;
+  if(chk)  { chk.checked = !!(sf && st); toggleEditSuspend(chk); }
   // Reset campo de mídia
   const fileInput = document.getElementById("edit-batch-file");
   if (fileInput) fileInput.value = "";
@@ -1792,6 +1800,10 @@ function abrirEditarLote(btnEl) {
   if (fnLabel) fnLabel.textContent = "Nenhum arquivo selecionado";
   const modal = document.getElementById("edit-batch-modal");
   modal.style.display = "flex";
+}
+function toggleEditSuspend(chk) {
+  const box = document.getElementById("edit-suspend-box");
+  if(box) box.style.display = chk.checked ? "flex" : "none";
 }
 function fecharEditarLote() {
   document.getElementById("edit-batch-modal").style.display = "none";
@@ -1832,7 +1844,15 @@ async function salvarEdicaoLote() {
     btn.textContent = "⏳ Salvando…";
   }
 
-  const body = { caption, scheduled_at: scheduledAt || undefined };
+  const suspendEnabled = document.getElementById("edit-batch-suspend-enabled")?.checked;
+  const suspendFrom    = document.getElementById("edit-batch-sf")?.value || "";
+  const suspendTo      = document.getElementById("edit-batch-st")?.value || "";
+  const body = {
+    caption,
+    scheduled_at: scheduledAt || undefined,
+    suspend_from: suspendEnabled ? suspendFrom : "",
+    suspend_to:   suspendEnabled ? suspendTo   : "",
+  };
   if (newFilename) { body.filename = newFilename; body.media_type = newMediaType; }
 
   const r = await fetch(`/api/posts/batch/${_editBatchId}`, {
@@ -2649,6 +2669,25 @@ function dismissPwaBanner() {
       </div>
       <span style="font-size:11px;color:var(--muted)">Deixe em branco para manter a mídia atual. Imagem ou vídeo (max 50 MB).</span>
     </div>
+    <!-- Pausa noturna -->
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Pausa noturna</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="edit-batch-suspend-enabled" onchange="toggleEditSuspend(this)">
+        Ativar pausa noturna neste lote
+      </label>
+      <div id="edit-suspend-box" style="display:none;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted)">Pausar a partir de</label>
+          <input type="time" id="edit-batch-sf" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:8px 10px;outline:none">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:11px;color:var(--muted)">Retomar às</label>
+          <input type="time" id="edit-batch-st" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:8px 10px;outline:none">
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="fecharEditarLote()" class="btn btn-ghost btn-sm">Cancelar</button>
       <button onclick="salvarEdicaoLote()" class="btn btn-primary btn-sm" id="edit-batch-save-btn">💾 Salvar alterações</button>

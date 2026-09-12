@@ -2790,31 +2790,33 @@ def api_edit_batch(batch_id):
             conn.close()
             return jsonify({"ok": False, "error": f"Horário inválido: {e}"})
 
-    new_filename   = data.get("filename")    # troca de mídia
-    new_media_type = data.get("media_type")
+    new_filename    = data.get("filename")    # troca de mídia
+    new_media_type  = data.get("media_type")
+    new_suspend_from = data.get("suspend_from")  # pausa noturna
+    new_suspend_to   = data.get("suspend_to")
 
     if updates:
         for new_sched, pid in updates:
-            if new_caption is not None and new_filename is not None:
-                conn.execute("UPDATE posts SET scheduled_at=?, caption=?, filename=?, media_type=? WHERE id=?",
-                             (new_sched, new_caption, new_filename, new_media_type or "image", pid))
-            elif new_caption is not None:
-                conn.execute("UPDATE posts SET scheduled_at=?, caption=? WHERE id=?", (new_sched, new_caption, pid))
-            elif new_filename is not None:
-                conn.execute("UPDATE posts SET scheduled_at=?, filename=?, media_type=? WHERE id=?",
-                             (new_sched, new_filename, new_media_type or "image", pid))
-            else:
-                conn.execute("UPDATE posts SET scheduled_at=? WHERE id=?", (new_sched, pid))
+            sets = ["scheduled_at=?"]
+            vals = [new_sched]
+            if new_caption    is not None: sets.append("caption=?");     vals.append(new_caption)
+            if new_filename   is not None: sets.append("filename=?");    vals.append(new_filename)
+            if new_filename   is not None: sets.append("media_type=?");  vals.append(new_media_type or "image")
+            if new_suspend_from is not None: sets.append("suspend_from=?"); vals.append(new_suspend_from)
+            if new_suspend_to   is not None: sets.append("suspend_to=?");   vals.append(new_suspend_to)
+            vals.append(pid)
+            conn.execute(f"UPDATE posts SET {', '.join(sets)} WHERE id=?", vals)
     else:
-        if new_caption is not None and new_filename is not None:
-            conn.execute("UPDATE posts SET caption=?, filename=?, media_type=? WHERE batch_id=? AND user_id=? AND status='pending'",
-                         (new_caption, new_filename, new_media_type or "image", batch_id, uid))
-        elif new_caption is not None:
-            conn.execute("UPDATE posts SET caption=? WHERE batch_id=? AND user_id=? AND status='pending'",
-                         (new_caption, batch_id, uid))
-        elif new_filename is not None:
-            conn.execute("UPDATE posts SET filename=?, media_type=? WHERE batch_id=? AND user_id=? AND status='pending'",
-                         (new_filename, new_media_type or "image", batch_id, uid))
+        sets = []
+        vals = []
+        if new_caption    is not None: sets.append("caption=?");      vals.append(new_caption)
+        if new_filename   is not None: sets.append("filename=?");     vals.append(new_filename)
+        if new_filename   is not None: sets.append("media_type=?");   vals.append(new_media_type or "image")
+        if new_suspend_from is not None: sets.append("suspend_from=?"); vals.append(new_suspend_from)
+        if new_suspend_to   is not None: sets.append("suspend_to=?");   vals.append(new_suspend_to)
+        if sets:
+            vals += [batch_id, uid]
+            conn.execute(f"UPDATE posts SET {', '.join(sets)} WHERE batch_id=? AND user_id=? AND status='pending'", vals)
 
     conn.commit()
     conn.close()

@@ -917,7 +917,7 @@ def _process_post_inner(post_id, row, cfg):
         if i % 10 == 9 or i == len(wa_groups) - 1:
             _save_partial()
         if i < len(wa_groups) - 1:
-            time.sleep(0.3)  # 300ms entre grupos (era 1s) — suficiente para evitar rate limit
+            time.sleep(1.5)  # 1.5s entre grupos — reduz risco de bloqueio do WhatsApp
 
     media_url = ig_media_url(filename, cfg)
     if ig_feed:

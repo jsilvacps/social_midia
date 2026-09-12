@@ -1424,29 +1424,22 @@ function renderPosts(posts) {
   batches.forEach((bPosts, key) => list.appendChild(buildBatchCard(key, bPosts)));
 }
 
-function updateNextDispatchBanner(posts) {
-  const banner = document.getElementById("next-dispatch-banner");
-  const info   = document.getElementById("next-dispatch-info");
+
+async function loadNextDispatch() {
+  const d = await fetch("/api/posts/next").then(r=>r.json()).catch(()=>({}));
+  const banner    = document.getElementById("next-dispatch-banner");
+  const info      = document.getElementById("next-dispatch-info");
   const countdown = document.getElementById("next-dispatch-countdown");
   if(_countdownTimer) clearInterval(_countdownTimer);
 
-  // Pega o próximo post pendente (mais próximo no tempo)
-  const pending = posts
-    .filter(p => p.status === "pending" && p.scheduled_at)
-    .sort((a,b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  if(!d.next){ banner.style.display="none"; return; }
 
-  if(!pending.length){ banner.style.display = "none"; return; }
-
-  const next = pending[0];
-  const title = next.batch_title || next.caption?.slice(0,30) || "—";
-  const dt = next.scheduled_at.replace("T"," ").slice(0,16);
-  info.textContent = `${title} — ${dt}`;
+  const next = d.next;
+  info.textContent = `${next.title || "—"} — ${(next.scheduled_at||"").replace("T"," ").slice(0,16)}`;
   banner.style.display = "flex";
 
-  // Countdown regressivo
   function tick() {
-    const now  = new Date();
-    const diff = new Date(next.scheduled_at.replace(" ","T")) - now;
+    const diff = new Date(next.scheduled_at.replace(" ","T")) - new Date();
     if(diff <= 0){ countdown.textContent = "🚀 disparando..."; return; }
     const h = Math.floor(diff/3600000);
     const m = Math.floor((diff%3600000)/60000);
@@ -1460,7 +1453,7 @@ function updateNextDispatchBanner(posts) {
 async function loadPosts() {
   const posts = await fetch("/api/posts").then(r=>r.json());
   _allPosts = posts;
-  updateNextDispatchBanner(posts);
+  loadNextDispatch();  // banner usa endpoint dedicado — pega o verdadeiro próximo
   renderPosts(posts);
   if(posts.some(p=>["pending","sending"].includes(p.status))) startPostStream();
 }

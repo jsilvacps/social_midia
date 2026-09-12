@@ -2585,12 +2585,22 @@ def api_wa_test_text():
 def api_posts():
     uid  = session["user_id"]
     conn = db()
+    # Busca pendentes/suspensos/enviando (sem limite) + últimos 80 enviados/falhos
     rows = conn.execute(
         """SELECT id,caption,filename,media_type,wa_groups,scheduled_at,status,
                   sent_at,result,batch_id,batch_title,suspend_from,suspend_to,send_all_groups
-           FROM posts WHERE user_id=? ORDER BY scheduled_at DESC LIMIT 100""",
+           FROM posts WHERE user_id=? AND status IN ('pending','queued','sending','suspended')
+           ORDER BY scheduled_at ASC""",
         (uid,)
     ).fetchall()
+    sent_rows = conn.execute(
+        """SELECT id,caption,filename,media_type,wa_groups,scheduled_at,status,
+                  sent_at,result,batch_id,batch_title,suspend_from,suspend_to,send_all_groups
+           FROM posts WHERE user_id=? AND status IN ('sent','failed','partial')
+           ORDER BY scheduled_at DESC LIMIT 80""",
+        (uid,)
+    ).fetchall()
+    rows = list(rows) + list(sent_rows)
     conn.close()
     out = []
     for r in rows:
@@ -2607,6 +2617,27 @@ def api_posts():
             d["result_summary"] = {"ok": 0, "err": 0}
         out.append(d)
     return jsonify(out)
+
+@app.route("/api/posts/next", methods=["GET"])
+@require_login
+def api_posts_next():
+    """Retorna o próximo post pendente (para o banner de próximo disparo)."""
+    uid  = session["user_id"]
+    conn = db()
+    row  = conn.execute(
+        """SELECT id, caption, batch_title, scheduled_at
+           FROM posts WHERE user_id=? AND status='pending'
+           ORDER BY scheduled_at ASC LIMIT 1""",
+        (uid,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"next": None})
+    return jsonify({"next": {
+        "id": row["id"],
+        "title": row["batch_title"] or (row["caption"] or "")[:30],
+        "scheduled_at": row["scheduled_at"]
+    }})
 
 @app.route("/api/posts", methods=["POST"])
 @require_login

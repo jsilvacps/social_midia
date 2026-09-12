@@ -150,6 +150,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .btn-secondary{background:var(--card);color:var(--muted);border:1.5px solid var(--border)}
 .btn-danger{background:#1A0808;color:#FCA5A5;border:1.5px solid #7F1D1D}
 .btn-sm{padding:9px 14px;font-size:13px;border-radius:10px;width:auto}
+.filter-btn{padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;transition:.15s}
+.filter-btn.active,.filter-btn:hover{background:rgba(99,102,241,.15);border-color:var(--primary);color:var(--primary2)}
 
 /* Upload Zone */
 #upload-zone{
@@ -600,6 +602,26 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       <span class="card-title" style="margin:0">Publicações</span>
       <button class="btn btn-secondary btn-sm" onclick="loadPosts()">↺ Atualizar</button>
     </div>
+
+    <!-- Banner próximo disparo -->
+    <div id="next-dispatch-banner" style="display:none;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">⏱</span>
+      <div>
+        <div style="font-size:11px;color:var(--muted)">Próximo disparo</div>
+        <div id="next-dispatch-info" style="font-size:13px;font-weight:600;color:var(--primary2)"></div>
+      </div>
+      <div id="next-dispatch-countdown" style="margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums"></div>
+    </div>
+
+    <!-- Filtro de status -->
+    <div id="posts-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="filter-btn active" data-filter="all"     onclick="setPostFilter('all',this)">Todos</button>
+      <button class="filter-btn"        data-filter="pending"  onclick="setPostFilter('pending',this)">🕐 Agendado</button>
+      <button class="filter-btn"        data-filter="sent"     onclick="setPostFilter('sent',this)">✅ Enviado</button>
+      <button class="filter-btn"        data-filter="failed"   onclick="setPostFilter('failed',this)">❌ Falhou</button>
+      <button class="filter-btn"        data-filter="suspended" onclick="setPostFilter('suspended',this)">🔕 Suspenso</button>
+    </div>
+
     <div id="posts-list"></div>
     <div class="empty" id="empty-posts" style="display:none">
       <div class="big-icon">📭</div>
@@ -1361,26 +1383,85 @@ async function agendarPost() {
 }
 
 // ══ Posts List ═══════════════════════════════════════════
-async function loadPosts() {
-  const posts = await fetch("/api/posts").then(r=>r.json());
+let _allPosts = [];
+let _postFilter = "all";
+let _countdownTimer = null;
+
+function setPostFilter(filter, btn) {
+  _postFilter = filter;
+  document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+  if(btn) btn.classList.add("active");
+  renderPosts(_allPosts);
+}
+
+function renderPosts(posts) {
   const list  = document.getElementById("posts-list");
   const empty = document.getElementById("empty-posts");
   list.innerHTML = "";
-  if(!posts.length){ empty.style.display="flex"; return; }
+
+  // Filtra por status
+  let filtered = posts;
+  if(_postFilter !== "all") {
+    filtered = posts.filter(p => {
+      if(_postFilter === "pending")   return p.status === "pending" || p.status === "queued";
+      if(_postFilter === "sent")      return p.status === "sent";
+      if(_postFilter === "failed")    return p.status === "failed" || p.status === "partial";
+      if(_postFilter === "suspended") return p.status === "suspended";
+      return true;
+    });
+  }
+
+  if(!filtered.length){ empty.style.display="flex"; return; }
   empty.style.display = "none";
 
-  // Agrupa por batch_id (posts sem batch ficam em grupos individuais)
+  // Agrupa por batch_id
   const batches = new Map();
-  posts.forEach(p => {
+  filtered.forEach(p => {
     const key = p.batch_id || `solo-${p.id}`;
     if(!batches.has(key)) batches.set(key, []);
     batches.get(key).push(p);
   });
+  batches.forEach((bPosts, key) => list.appendChild(buildBatchCard(key, bPosts)));
+}
 
-  batches.forEach((bPosts, key) => {
-    list.appendChild(buildBatchCard(key, bPosts));
-  });
+function updateNextDispatchBanner(posts) {
+  const banner = document.getElementById("next-dispatch-banner");
+  const info   = document.getElementById("next-dispatch-info");
+  const countdown = document.getElementById("next-dispatch-countdown");
+  if(_countdownTimer) clearInterval(_countdownTimer);
 
+  // Pega o próximo post pendente (mais próximo no tempo)
+  const pending = posts
+    .filter(p => p.status === "pending" && p.scheduled_at)
+    .sort((a,b) => a.scheduled_at.localeCompare(b.scheduled_at));
+
+  if(!pending.length){ banner.style.display = "none"; return; }
+
+  const next = pending[0];
+  const title = next.batch_title || next.caption?.slice(0,30) || "—";
+  const dt = next.scheduled_at.replace("T"," ").slice(0,16);
+  info.textContent = `${title} — ${dt}`;
+  banner.style.display = "flex";
+
+  // Countdown regressivo
+  function tick() {
+    const now  = new Date();
+    const diff = new Date(next.scheduled_at.replace(" ","T")) - now;
+    if(diff <= 0){ countdown.textContent = "🚀 disparando..."; return; }
+    const h = Math.floor(diff/3600000);
+    const m = Math.floor((diff%3600000)/60000);
+    const s = Math.floor((diff%60000)/1000);
+    countdown.textContent = h>0 ? `em ${h}h ${m}m` : m>0 ? `em ${m}m ${s}s` : `em ${s}s`;
+  }
+  tick();
+  _countdownTimer = setInterval(tick, 1000);
+}
+
+async function loadPosts() {
+  const posts = await fetch("/api/posts").then(r=>r.json());
+  _allPosts = posts;
+  updateNextDispatchBanner(posts);
+  renderPosts(posts);
   if(posts.some(p=>["pending","sending"].includes(p.status))) startPostStream();
 }
 

@@ -20,6 +20,62 @@ from pathlib import Path
 import concurrent.futures
 
 import requests
+
+# ── Cloudflare R2 (storage externo) ───────────────────────────────────────────
+R2_ACCESS_KEY  = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_KEY  = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_ENDPOINT    = os.getenv("R2_ENDPOINT", "")          # https://xxxx.r2.cloudflarestorage.com
+R2_PUBLIC_URL  = os.getenv("R2_PUBLIC_URL", "")        # https://pub-xxxx.r2.dev
+R2_BUCKET      = "zapshot-midias"
+USE_R2 = bool(R2_ACCESS_KEY and R2_SECRET_KEY and R2_ENDPOINT)
+
+if USE_R2:
+    try:
+        import boto3
+        from botocore.config import Config as BotoConfig
+        _r2_client = boto3.client(
+            "s3",
+            endpoint_url=R2_ENDPOINT,
+            aws_access_key_id=R2_ACCESS_KEY,
+            aws_secret_access_key=R2_SECRET_KEY,
+            config=BotoConfig(signature_version="s3v4"),
+            region_name="auto",
+        )
+        print("[r2] cliente boto3 inicializado")
+    except Exception as _e:
+        print(f"[r2] ERRO ao inicializar boto3: {_e}")
+        USE_R2 = False
+
+def r2_upload(filename: str, content: bytes, mimetype: str) -> bool:
+    """Faz upload de bytes para o R2. Retorna True se ok."""
+    if not USE_R2:
+        return False
+    try:
+        _r2_client.put_object(
+            Bucket=R2_BUCKET,
+            Key=filename,
+            Body=content,
+            ContentType=mimetype,
+        )
+        return True
+    except Exception as e:
+        print(f"[r2] upload erro {filename}: {e}")
+        return False
+
+def r2_download(filename: str) -> bytes | None:
+    """Baixa arquivo do R2. Retorna bytes ou None."""
+    if not USE_R2:
+        return None
+    try:
+        resp = _r2_client.get_object(Bucket=R2_BUCKET, Key=filename)
+        return resp["Body"].read()
+    except Exception as e:
+        print(f"[r2] download erro {filename}: {e}")
+        return None
+
+def r2_public_url(filename: str) -> str:
+    """Retorna URL pública do arquivo no R2."""
+    return f"{R2_PUBLIC_URL.rstrip('/')}/{filename}" if R2_PUBLIC_URL else ""
 from flask import (Flask, Response, jsonify, make_response, redirect, render_template,
                    request, send_file, session, stream_with_context, url_for)
 
@@ -544,6 +600,12 @@ def wa_get_groups(cfg) -> tuple[list, str]:
         return [], str(exc)
 
 def _media_url(filename: str, cfg) -> str:
+    # R2 disponível → URL pública direta (zero egress do Render)
+    if USE_R2 and R2_PUBLIC_URL:
+        safe = filename
+        if filename.startswith("__lib__"):
+            safe = filename[len("__lib__"):]
+        return r2_public_url(safe)
     app_url = cfg.get("app_url", "").rstrip("/")
     if not app_url:
         app_url = "https://social-midia.onrender.com"
@@ -553,12 +615,17 @@ def _media_url(filename: str, cfg) -> str:
     return f"{app_url}/api/media/{filename}"
 
 def _read_media_bytes(filepath: Path, db_filename: str) -> bytes | None:
-    """Lê o arquivo do disco ou diretamente do PostgreSQL. Retorna bytes ou None."""
+    """Lê o arquivo do disco, R2 ou PostgreSQL. Retorna bytes ou None."""
     # 1. Tenta disco (caso ainda esteja em /tmp)
     if filepath.exists():
         return filepath.read_bytes()
-    # 2. Lê direto do PG sem precisar escrever em disco
     fname = db_filename or filepath.name
+    # 2. Tenta R2
+    if USE_R2:
+        data = r2_download(fname)
+        if data:
+            return data
+    # 3. Lê direto do PG como fallback
     if USE_PG:
         try:
             raw = psycopg2.connect(DATABASE_URL)
@@ -567,9 +634,7 @@ def _read_media_bytes(filepath: Path, db_filename: str) -> bytes | None:
             row = cur.fetchone()
             raw.close()
             if row:
-                print(f"[read_media] lido do PG: {fname} ({len(bytes(row[0]))} bytes)")
                 return bytes(row[0])
-            print(f"[read_media] NAO encontrado no PG: {fname}")
         except Exception as e:
             print(f"[read_media] ERRO PG ao ler {fname}: {e}")
     return None
@@ -1974,9 +2039,17 @@ _MIME_MAP = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
              ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
 
 def _media_persist(filename: str, content: bytes, mimetype: str, is_library: bool = False) -> bool:
-    """Salva arquivo no PostgreSQL para sobreviver a restarts do Render. Retorna True se ok."""
+    """Salva arquivo no R2 (preferencial) ou PostgreSQL. Retorna True se ok."""
+    # 1. Tenta R2 primeiro
+    if USE_R2:
+        ok = r2_upload(filename, content, mimetype)
+        if ok:
+            print(f"[media_persist] R2 OK: {filename} ({len(content):,} bytes)")
+            return True
+        print(f"[media_persist] R2 falhou, tentando PG...")
+    # 2. Fallback para PostgreSQL
     if not USE_PG:
-        return True  # sem PG, disco local é suficiente
+        return True  # sem PG nem R2, disco local é suficiente
     import traceback as _tb
     try:
         raw = psycopg2.connect(DATABASE_URL)
@@ -1990,10 +2063,10 @@ def _media_persist(filename: str, content: bytes, mimetype: str, is_library: boo
         )
         raw.commit()
         raw.close()
-        print(f"[media_persist] OK: {filename} ({len(content):,} bytes)")
+        print(f"[media_persist] PG OK: {filename} ({len(content):,} bytes)")
         return True
     except Exception as e:
-        print(f"[media_persist] ERRO: {filename} — {e}")
+        print(f"[media_persist] ERRO PG: {filename} — {e}")
         print(_tb.format_exc())
         return False
 
@@ -2019,7 +2092,10 @@ def _media_restore(filename: str, dest_path: Path) -> bool:
         return False
 
 def _serve_media(path: Path, filename: str):
-    """Serve arquivo do disco, restaurando do PG se necessário."""
+    """Serve arquivo: redireciona para R2 (se disponível), do disco ou restaura do PG."""
+    # R2 disponível → redirect para URL pública (zero tráfego no Render)
+    if USE_R2 and R2_PUBLIC_URL:
+        return redirect(r2_public_url(filename), code=302)
     if not path.exists():
         if not _media_restore(filename, path):
             return "Not found", 404
@@ -2106,6 +2182,38 @@ def api_limpar_midias_orfas():
                         "em_uso": len(em_uso), "total_era": len(todas)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+# ── Migração PG → R2 ──────────────────────────────────────────────────────────
+@app.route("/api/admin/migrar-r2", methods=["POST"])
+@require_admin
+def api_migrar_r2():
+    """Migra todos os arquivos salvos no PostgreSQL para o Cloudflare R2.
+    Seguro rodar várias vezes (idempotente)."""
+    if not USE_R2:
+        return jsonify({"ok": False, "error": "R2 não configurado"})
+    if not USE_PG:
+        return jsonify({"ok": False, "error": "PostgreSQL não disponível"})
+    try:
+        raw = psycopg2.connect(DATABASE_URL)
+        cur = raw.cursor()
+        cur.execute("SELECT filename, content, mimetype FROM media_files")
+        rows = cur.fetchall()
+        raw.close()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    ok_list, fail_list = [], []
+    for filename, content_pg, mimetype in rows:
+        try:
+            data = bytes(content_pg)
+            mime = mimetype or "application/octet-stream"
+            if r2_upload(filename, data, mime):
+                ok_list.append(filename)
+            else:
+                fail_list.append(filename)
+        except Exception as e:
+            fail_list.append(f"{filename}:{e}")
+    return jsonify({"ok": True, "migrados": len(ok_list),
+                    "falhas": len(fail_list), "fail_list": fail_list[:20]})
 
 # ── Re-salva mídias de posts pendentes no PG (recover após restart) ───────────
 @app.route("/api/admin/reenviar-midias", methods=["POST"])

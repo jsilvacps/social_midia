@@ -2184,7 +2184,7 @@ def api_limpar_midias_orfas():
         return jsonify({"ok": False, "error": str(e)})
 
 # ── Migração PG → R2 ──────────────────────────────────────────────────────────
-@app.route("/api/admin/migrar-r2", methods=["POST"])
+@app.route("/api/admin/migrar-r2", methods=["GET", "POST"])
 @require_admin
 def api_migrar_r2():
     """Migra todos os arquivos salvos no PostgreSQL para o Cloudflare R2.

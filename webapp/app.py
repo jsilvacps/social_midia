@@ -1637,6 +1637,15 @@ def admin_create_wa_instance(uid):
         }, timeout=15)
         data = r.json()
         print(f"[wa-instance] create uid={uid}: {r.status_code} {data}")
+        if r.status_code == 403 and "already in use" in str(data):
+            # Instância já existe — só reconecta a config do usuário
+            user_cfg = load_config(user_id=uid)
+            user_cfg["evo_url"]      = base
+            user_cfg["evo_token"]    = apikey
+            user_cfg["evo_instance"] = instance_name
+            user_cfg["app_url"]      = cfg.get("app_url", "https://social-midia.onrender.com")
+            save_config(uid, user_cfg)
+            return jsonify({"ok": True, "instance": instance_name, "reused": True})
         if r.status_code not in (200, 201):
             return jsonify({"ok": False, "error": data.get("message", str(data))})
         # Salva na config do cliente automaticamente

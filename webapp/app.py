@@ -3057,8 +3057,19 @@ def api_wa_status_user():
 @require_login
 def api_wa_qr_user():
     base, token, instance = _get_user_evo_cfg()
+    uid = session["user_id"]
+    # Se config vazia, tenta herdar do admin
     if not all([base, token, instance]):
-        return jsonify({"ok": False, "error": "Não configurado"})
+        admin_cfg = _admin_evo_cfg()
+        if admin_cfg:
+            base     = base     or admin_cfg.get("evo_url","").rstrip("/")
+            token    = token    or admin_cfg.get("evo_token","")
+            instance = instance or f"zapshot_u{uid}"
+            if all([base, token, instance]):
+                save_config({"evo_url": base, "evo_token": token,
+                             "evo_instance": instance}, user_id=uid)
+    if not all([base, token, instance]):
+        return jsonify({"ok": False, "error": f"Não configurado — base={base!r} inst={instance!r}"})
     try:
         r = requests.get(f"{base}/instance/connect/{instance}",
                          headers={"apikey": token}, timeout=30)
@@ -3068,7 +3079,7 @@ def api_wa_qr_user():
             if qr and qr.startswith("data:image"):
                 qr = qr.split(",", 1)[1]
             return jsonify({"ok": True, "qr_base64": qr})
-        return jsonify({"ok": False, "error": f"HTTP {r.status_code}"})
+        return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 

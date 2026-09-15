@@ -3146,19 +3146,62 @@ def api_wa_pairing_user():
 def api_wa_disconnect_user():
     base, token, instance = _get_user_evo_cfg()
     uid = session["user_id"]
-    # Limpa cache imediatamente
     _wa_status_cache.pop(uid, None)
     if not all([base, token, instance]):
         return jsonify({"ok": False, "error": "Não configurado"})
+    h = {"apikey": token}
+    # 1. Logout
+    try: requests.delete(f"{base}/instance/logout/{instance}", headers=h, timeout=10)
+    except: pass
+    # 2. Delete instância
+    try: requests.delete(f"{base}/instance/delete/{instance}", headers=h, timeout=10)
+    except: pass
+    _wa_status_cache[uid] = {"state": "close", "ts": time.time()}
+    return jsonify({"ok": True})
+
+@app.route("/api/wa/reset", methods=["POST"])
+@require_login
+def api_wa_reset():
+    """Apaga instância completamente e recria do zero."""
+    base, token, instance = _get_user_evo_cfg()
+    uid = session["user_id"]
+    _wa_status_cache.pop(uid, None)
+    if not all([base, token, instance]):
+        return jsonify({"ok": False, "error": "Não configurado"})
+    h = {"apikey": token, "Content-Type": "application/json"}
+    log = []
+    # 1. Logout
     try:
-        # Logout (desvincula sessão sem apagar instância)
-        requests.delete(f"{base}/instance/logout/{instance}",
-                        headers={"apikey": token}, timeout=10)
-        # Atualiza cache para desconectado
-        _wa_status_cache[uid] = {"state": "close", "ts": time.time()}
-        return jsonify({"ok": True})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)})
+        r = requests.delete(f"{base}/instance/logout/{instance}", headers=h, timeout=10)
+        log.append(f"logout: {r.status_code}")
+    except Exception as e:
+        log.append(f"logout err: {e}")
+    time.sleep(1)
+    # 2. Delete
+    try:
+        r = requests.delete(f"{base}/instance/delete/{instance}", headers=h, timeout=10)
+        log.append(f"delete: {r.status_code}")
+    except Exception as e:
+        log.append(f"delete err: {e}")
+    time.sleep(2)
+    # 3. Recria
+    try:
+        r = requests.post(f"{base}/instance/create", headers=h, json={
+            "instanceName": instance,
+            "integration": "WHATSAPP-BAILEYS",
+            "qrcode": True,
+        }, timeout=15)
+        log.append(f"create: {r.status_code} {r.text[:100]}")
+        if r.status_code in (200, 201):
+            _wa_status_cache[uid] = {"state": "close", "ts": time.time()}
+            return jsonify({"ok": True, "log": log})
+        # Se já existe, tudo bem
+        if r.status_code in (400, 403) and "already" in r.text.lower():
+            _wa_status_cache[uid] = {"state": "close", "ts": time.time()}
+            return jsonify({"ok": True, "log": log})
+        return jsonify({"ok": False, "error": r.text[:200], "log": log})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "log": log})
 
 @app.route("/api/grupos/debug", methods=["POST"])
 @require_login

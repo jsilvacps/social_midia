@@ -697,6 +697,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
         <button id="wa-conn-btn-qr" class="btn btn-primary btn-sm" onclick="waConnLoadQr()">📷 Escanear QR</button>
         <button id="wa-conn-btn-pair" class="btn btn-secondary btn-sm" onclick="waConnTogglePair()">🔢 Código de 8 dígitos</button>
         <button id="wa-conn-btn-force" class="btn btn-secondary btn-sm" onclick="waConnForce()" style="background:rgba(245,158,11,.15);border-color:#f59e0b;color:#f59e0b">⚡ Forçar reconexão</button>
+        <button id="wa-conn-btn-reset" class="btn btn-secondary btn-sm" onclick="waConnReset()" style="background:rgba(239,68,68,.1);border-color:#ef4444;color:#ef4444">🗑 Reset total</button>
         <button id="wa-conn-btn-disc" class="btn btn-danger btn-sm" onclick="waConnDisconnect()" style="display:none">🔌 Desconectar</button>
       </div>
     </div>
@@ -2137,6 +2138,25 @@ async function waConnCheck() {
     const btnForce = document.getElementById("wa-conn-btn-force");
     if (btnForce) btnForce.style.display = "inline-flex";
     if (!waConnTimer) waConnTimer = setInterval(waConnCheck, 5000);
+  }
+}
+
+async function waConnReset() {
+  if(!confirm("Apagar instância e recriar do zero? O QR vai aparecer para reconectar.")) return;
+  const btn = document.getElementById("wa-conn-btn-reset");
+  btn.disabled = true; btn.textContent = "⏳ Resetando…";
+  const st = document.getElementById("wa-conn-status");
+  if(st) { st.innerHTML = "⏳ <strong>Resetando instância…</strong> aguarde"; st.style.color="#f59e0b"; }
+  const r = await fetch("/api/wa/reset", {method:"POST"}).then(x=>x.json()).catch(()=>({ok:false,error:"Sem resposta"}));
+  btn.disabled = false; btn.textContent = "🗑 Reset total";
+  if(r.ok) {
+    toast("✅ Instância resetada! Agora escaneie o QR.");
+    _stopQrRefresh();
+    await new Promise(x=>setTimeout(x,1500));
+    await waConnLoadQr();
+  } else {
+    toast("❌ Erro: " + (r.error||"desconhecido"));
+    if(st) { st.innerHTML = "🔴 Erro no reset: " + (r.error||""); st.style.color="var(--danger)"; }
   }
 }
 

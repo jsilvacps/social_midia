@@ -3097,11 +3097,17 @@ def api_wa_pairing_user():
 @require_login
 def api_wa_disconnect_user():
     base, token, instance = _get_user_evo_cfg()
+    uid = session["user_id"]
+    # Limpa cache imediatamente
+    _wa_status_cache.pop(uid, None)
     if not all([base, token, instance]):
         return jsonify({"ok": False, "error": "Não configurado"})
     try:
-        requests.delete(f"{base}/instance/delete/{instance}",
-                        headers={"apikey": token}, timeout=30)
+        # Logout (desvincula sessão sem apagar instância)
+        requests.delete(f"{base}/instance/logout/{instance}",
+                        headers={"apikey": token}, timeout=10)
+        # Atualiza cache para desconectado
+        _wa_status_cache[uid] = {"state": "close", "ts": time.time()}
         return jsonify({"ok": True})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})

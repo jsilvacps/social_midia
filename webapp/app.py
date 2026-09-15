@@ -1123,7 +1123,7 @@ def _render_keepalive_loop():
             print("[render_keepalive] ping ok")
         except Exception as e:
             print(f"[render_keepalive] erro: {e}")
-        time.sleep(480)  # 8 minutos
+        time.sleep(240)  # 4 minutos
 
 threading.Thread(target=_render_keepalive_loop, daemon=True, name="render_keepalive").start()
 
@@ -1147,7 +1147,7 @@ def _evo_keepalive_loop():
                     pass
         except Exception:
             pass
-        time.sleep(480)  # 8 minutos
+        time.sleep(240)  # 4 minutos
 
 threading.Thread(target=_evo_keepalive_loop, daemon=True, name="evo_keepalive").start()
 

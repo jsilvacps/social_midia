@@ -3009,21 +3009,40 @@ def _get_user_evo_cfg():
     instance = cfg.get("evo_instance") or ""
     return base, token, instance
 
+_wa_status_cache = {}  # {user_id: {"state": str, "ts": float}}
+
+def _wa_status_refresh(uid, base, token, instance):
+    """Atualiza cache de status WA em background."""
+    try:
+        r = requests.get(f"{base}/instance/connectionState/{instance}",
+                         headers={"apikey": token}, timeout=8)
+        if r.status_code == 200:
+            state = r.json().get("instance", {}).get("state", "unknown")
+            _wa_status_cache[uid] = {"state": state, "ts": time.time()}
+    except Exception:
+        pass
+
 @app.route("/api/wa/status")
 @require_login
 def api_wa_status_user():
     base, token, instance = _get_user_evo_cfg()
     if not all([base, token, instance]):
         return jsonify({"ok": False, "error": "Não configurado"})
-    try:
-        r = requests.get(f"{base}/instance/connectionState/{instance}",
-                         headers={"apikey": token}, timeout=10)
-        if r.status_code == 200:
-            state = r.json().get("instance", {}).get("state", "unknown")
-            return jsonify({"ok": True, "state": state})
-        return jsonify({"ok": False, "error": f"HTTP {r.status_code}"})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)})
+    uid = session["user_id"]
+    cached = _wa_status_cache.get(uid)
+    now = time.time()
+    # Atualiza cache em background se velho (>5s) ou inexistente
+    if not cached or (now - cached["ts"]) > 5:
+        threading.Thread(target=_wa_status_refresh,
+                         args=(uid, base, token, instance), daemon=True).start()
+    # Retorna cache imediatamente (ou aguarda até 3s se não tiver cache ainda)
+    if not cached:
+        import time as _t; _t.sleep(3)
+        cached = _wa_status_cache.get(uid)
+    if cached:
+        return jsonify({"ok": True, "state": cached["state"],
+                        "cached": True, "age": int(now - cached["ts"])})
+    return jsonify({"ok": True, "state": "unknown"})
 
 @app.route("/api/wa/qr")
 @require_login

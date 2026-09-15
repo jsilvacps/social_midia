@@ -3053,6 +3053,30 @@ def api_wa_status_user():
                         "cached": True, "age": int(now - cached["ts"])})
     return jsonify({"ok": True, "state": "unknown"})
 
+@app.route("/api/wa/diag")
+@require_login
+def api_wa_diag():
+    """Diagnóstico rápido: mostra config WA do usuário e testa conexão com Evolution API."""
+    base, token, instance = _get_user_evo_cfg()
+    uid = session["user_id"]
+    admin_cfg = _admin_evo_cfg() or {}
+    result = {
+        "uid": uid,
+        "evo_url": base or "(vazio)",
+        "evo_instance": instance or "(vazio)",
+        "evo_token_ok": bool(token),
+        "admin_evo_url": admin_cfg.get("evo_url","(vazio)"),
+    }
+    if base and token and instance:
+        try:
+            r = requests.get(f"{base}/instance/connectionState/{instance}",
+                             headers={"apikey": token}, timeout=8)
+            result["evo_status"] = r.status_code
+            result["evo_state"]  = r.json().get("instance",{}).get("state","?")
+        except Exception as e:
+            result["evo_error"] = str(e)
+    return jsonify(result)
+
 @app.route("/api/wa/qr")
 @require_login
 def api_wa_qr_user():

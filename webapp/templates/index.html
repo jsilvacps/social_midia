@@ -1554,12 +1554,34 @@ function buildPostCardInner(p) {
   const statusMap = {pending:"🕐",sending:"📡",sent:"✅",failed:"❌",partial:"⚠️",suspended:"🔕"};
   const classMap  = {pending:"s-pending",sending:"s-sending",sent:"s-sent",failed:"s-failed",partial:"s-partial",suspended:"s-pending"};
 
+  function fmtErr(v) {
+    if(v === "ok") return "✅";
+    // Extrai mensagem legível do JSON de erro da Evolution API
+    try {
+      const m = v.match(/\{.*\}/s);
+      if(m) {
+        const obj = JSON.parse(m[0]);
+        const msg = (obj.response?.message||[]).join(", ") || obj.error || v;
+        return "❌ " + esc(msg.substring(0,120));
+      }
+    } catch(e){}
+    return "❌ " + esc(v.substring(0,120));
+  }
+
   let resultHtml = "";
   if(p.status !== "pending" && (Object.keys(result.wa||{}).length || Object.keys(result.ig||{}).length)) {
     const lines = [];
-    Object.entries(result.wa||{}).forEach(([k,v])=>lines.push(`💬 ${esc(k)}: ${v==="ok"?"✅":"❌ "+esc(v)}`));
-    Object.entries(result.ig||{}).forEach(([k,v])=>lines.push(`📸 ${k}: ${v==="ok"?"✅":"❌ "+esc(v)}`));
-    resultHtml = `<div class="result-detail" style="margin-top:4px">${lines.join("<br>")}</div>`;
+    const waEntries = Object.entries(result.wa||{});
+    const errEntries = waEntries.filter(([,v])=>v!=="ok");
+    const okCount   = waEntries.length - errEntries.length;
+    // Mostra resumo ok + erros detalhados
+    if(okCount > 0 && errEntries.length > 0)
+      lines.push(`✅ ${okCount} grupo(s) enviado(s) com sucesso`);
+    errEntries.forEach(([k,v])=>lines.push(`💬 ${esc(k)}: ${fmtErr(v)}`));
+    if(errEntries.length === 0)
+      waEntries.forEach(([k,v])=>lines.push(`💬 ${esc(k)}: ${fmtErr(v)}`));
+    Object.entries(result.ig||{}).forEach(([k,v])=>lines.push(`📸 ${k}: ${fmtErr(v)}`));
+    resultHtml = `<div class="result-detail" style="margin-top:4px;max-height:200px;overflow-y:auto">${lines.join("<br>")}</div>`;
   }
 
   return `<div id="post-${p.id}" style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">

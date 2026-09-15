@@ -2065,8 +2065,22 @@ async function waConnLoadQr(auto) {
 }
 
 async function waConnCheck() {
-  const r = await fetch("/api/wa/status").then(r=>r.json()).catch(()=>({ok:false}));
   const st = document.getElementById("wa-conn-status");
+  // Timeout de 8s — se demorar mais, mostra aviso em vez de travar
+  const ctrl = new AbortController();
+  const tId = setTimeout(()=>ctrl.abort(), 8000);
+  let r;
+  try {
+    r = await fetch("/api/wa/status", {signal: ctrl.signal}).then(x=>x.json());
+  } catch(e) {
+    clearTimeout(tId);
+    if(e.name === "AbortError") {
+      st.innerHTML = "🟠 <strong>Servidor iniciando…</strong> aguarde alguns segundos";
+      st.style.color = "#f59e0b";
+    }
+    return;
+  }
+  clearTimeout(tId);
   const btnQr   = document.getElementById("wa-conn-btn-qr");
   const btnPair = document.getElementById("wa-conn-btn-pair");
   const btnDisc = document.getElementById("wa-conn-btn-disc");

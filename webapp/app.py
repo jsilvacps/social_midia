@@ -3102,6 +3102,10 @@ def api_wa_qr_user():
             qr = d.get("base64") or d.get("qrcode", {}).get("base64", "")
             if qr and qr.startswith("data:image"):
                 qr = qr.split(",", 1)[1]
+            if not qr:
+                # Instância já conectada — não há QR para exibir
+                return jsonify({"ok": False, "already_connected": True,
+                                "error": "já conectado"})
             return jsonify({"ok": True, "qr_base64": qr})
         return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"})
     except Exception as exc:

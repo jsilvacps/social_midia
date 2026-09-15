@@ -2066,8 +2066,18 @@ async function waConnLoadQr(auto) {
     if(!waQrRefresh) waQrRefresh = setInterval(()=>waConnLoadQr(true), 25000);
     // Polling de status mais rápido (3s) enquanto QR está visível
     if(!waConnTimer) waConnTimer = setInterval(waConnCheck, 3000);
+  } else if (r.already_connected) {
+    // Instância já conectada — atualiza status e mostra Desconectar
+    const st = document.getElementById("wa-conn-status");
+    if(st) { st.innerHTML = "🟢 <strong>Conectado!</strong> Seu WhatsApp está vinculado e pronto para uso."; st.style.color="var(--green)"; }
+    document.getElementById("wa-conn-btn-qr").style.display   = "none";
+    document.getElementById("wa-conn-btn-pair").style.display = "none";
+    document.getElementById("wa-conn-btn-force").style.display= "none";
+    document.getElementById("wa-conn-btn-disc").style.display = "inline-flex";
+    if(qrWrap) qrWrap.style.display = "none";
+    _stopQrRefresh();
   } else {
-    const msg = r.error || "Erro desconhecido";
+    const msg = r.error || "Sem resposta do servidor";
     if(cd) cd.textContent = "❌ " + msg;
     const st = document.getElementById("wa-conn-status");
     if(st) { st.innerHTML = "🔴 <strong>Erro ao carregar QR:</strong> " + msg; st.style.color="var(--danger)"; }

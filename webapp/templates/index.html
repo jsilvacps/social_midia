@@ -2042,11 +2042,18 @@ async function waConnLoadQr(auto) {
   const qrWrap = document.getElementById("wa-conn-qr-wrap");
   const qrImg  = document.getElementById("wa-conn-qr");
   const cd     = document.getElementById("wa-qr-countdown");
-  if(!auto) { if(cd) cd.textContent = "⏳ Carregando QR…"; }
-  const r = await fetch("/api/wa/qr").then(r=>r.json()).catch(()=>({ok:false}));
+  const btnQr  = document.getElementById("wa-conn-btn-qr");
+  if(!auto) {
+    if(cd) cd.textContent = "⏳ Carregando QR…";
+    if(btnQr) { btnQr.disabled=true; btnQr.textContent="⏳ Carregando…"; }
+  }
+  const r = await fetch("/api/wa/qr").then(r=>r.json()).catch(()=>({ok:false,error:"Sem resposta do servidor"}));
+  if(!auto && btnQr) { btnQr.disabled=false; btnQr.textContent="📷 Escanear QR"; }
   if (r.ok && r.qr_base64) {
     qrImg.src = "data:image/png;base64," + r.qr_base64;
     qrWrap.style.display = "block";
+    const st = document.getElementById("wa-conn-status");
+    if(st) { st.innerHTML = "🟡 <strong>Escaneie o QR abaixo</strong>"; st.style.color="#f59e0b"; }
     // Countdown de 25s antes de expirar
     waQrSecondsLeft = 25;
     clearInterval(waQrCountdown);
@@ -2060,7 +2067,11 @@ async function waConnLoadQr(auto) {
     // Polling de status mais rápido (3s) enquanto QR está visível
     if(!waConnTimer) waConnTimer = setInterval(waConnCheck, 3000);
   } else {
-    if(cd) cd.textContent = "❌ Erro ao carregar QR — tente novamente";
+    const msg = r.error || "Erro desconhecido";
+    if(cd) cd.textContent = "❌ " + msg;
+    const st = document.getElementById("wa-conn-status");
+    if(st) { st.innerHTML = "🔴 <strong>Erro ao carregar QR:</strong> " + msg; st.style.color="var(--danger)"; }
+    toast("❌ QR: " + msg);
   }
 }
 

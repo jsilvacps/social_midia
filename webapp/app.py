@@ -2391,8 +2391,9 @@ def api_library_list():
                 fname, mime, size = row
                 ext = Path(fname).suffix.lower()
                 mtype = "video" if ext in ALLOWED_VIDEO else "image"
+                url = r2_public_url(fname) if USE_R2 and R2_PUBLIC_URL else f"/api/library/file/{fname}"
                 files.append({"filename": fname, "media_type": mtype,
-                               "size_kb": round((size or 0) / 1024)})
+                               "size_kb": round((size or 0) / 1024), "url": url})
             return jsonify({"ok": True, "files": files})
         except Exception as e:
             print(f"[library_list] erro PG: {e}")

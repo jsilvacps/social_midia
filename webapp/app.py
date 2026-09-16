@@ -2193,6 +2193,17 @@ def api_limpar_midias_orfas():
         return jsonify({"ok": False, "error": str(e)})
 
 # ── Migração PG → R2 ──────────────────────────────────────────────────────────
+@app.route("/api/admin/r2-diag")
+@require_login
+def api_r2_diag():
+    return jsonify({
+        "USE_R2": USE_R2,
+        "R2_PUBLIC_URL": R2_PUBLIC_URL,
+        "R2_ENDPOINT": R2_ENDPOINT,
+        "R2_ACCESS_KEY": R2_ACCESS_KEY[:6] + "..." if R2_ACCESS_KEY else "",
+        "boto3_ok": "boto3" in str(globals().get("_r2_client","")) or USE_R2,
+    })
+
 @app.route("/api/admin/migrar-r2", methods=["GET", "POST"])
 @require_admin
 def api_migrar_r2():

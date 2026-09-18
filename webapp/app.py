@@ -1047,8 +1047,14 @@ def _in_suspend_window(suspend_from: str, suspend_to: str, now_hm: str) -> bool:
         return False
 
 # ── Scheduler Thread ───────────────────────────────────────────────────────────
+_scheduler_paused = False  # flag de pausa de emergência
+
 def _scheduler_loop():
+    global _scheduler_paused
     while True:
+        if _scheduler_paused:
+            time.sleep(5)
+            continue
         try:
             now_dt   = now_brasilia()
             now_str  = now_dt.strftime("%Y-%m-%dT%H:%M")
@@ -2193,6 +2199,31 @@ def api_limpar_midias_orfas():
         return jsonify({"ok": False, "error": str(e)})
 
 # ── Migração PG → R2 ──────────────────────────────────────────────────────────
+@app.route("/api/admin/scheduler-pause", methods=["POST"])
+@require_login
+def api_scheduler_pause():
+    global _scheduler_paused
+    _scheduler_paused = True
+    # Cancela todos os posts queued/sending → volta para pending
+    conn = db()
+    n = conn.execute(
+        "UPDATE posts SET status='pending' WHERE status IN ('queued','sending')"
+    ).rowcount
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "pausado": True, "posts_resetados": n})
+
+@app.route("/api/admin/scheduler-resume", methods=["POST"])
+@require_login
+def api_scheduler_resume():
+    global _scheduler_paused
+    _scheduler_paused = False
+    return jsonify({"ok": True, "pausado": False})
+
+@app.route("/api/admin/scheduler-status")
+@require_login
+def api_scheduler_status():
+    return jsonify({"pausado": _scheduler_paused})
+
 @app.route("/api/admin/r2-diag")
 @require_login
 def api_r2_diag():

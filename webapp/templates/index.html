@@ -704,6 +704,17 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
     <!-- Limpeza de conversas -->
     <div class="card">
+      <!-- Pausa de Emergência -->
+      <div id="emergency-bar" style="background:rgba(239,68,68,.12);border:1.5px solid #ef4444;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🚨</span>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:700;color:#ef4444">PAUSA DE EMERGÊNCIA</div>
+          <div id="scheduler-status-txt" style="font-size:11px;color:var(--muted)">Verificando…</div>
+        </div>
+        <button id="btn-pause" class="btn btn-danger btn-sm" onclick="schedulerPause()" style="font-size:12px">⏸ Pausar disparos</button>
+        <button id="btn-resume" class="btn btn-success btn-sm" onclick="schedulerResume()" style="font-size:12px;display:none">▶ Retomar</button>
+      </div>
+
       <p class="card-title">📦 Arquivar Conversas de Grupos</p>
       <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
         Arquiva todos os grupos no seu WhatsApp — eles saem da lista principal e ficam na aba "Arquivadas". A Evolution API v2 não suporta apagar mensagens via API.
@@ -2205,6 +2216,38 @@ async function waConnDisconnect() {
   waConnCheck();
 }
 
+async function schedulerCheckStatus() {
+  const r = await fetch("/api/admin/scheduler-status").then(x=>x.json()).catch(()=>({pausado:false}));
+  const txt = document.getElementById("scheduler-status-txt");
+  const btnP = document.getElementById("btn-pause");
+  const btnR = document.getElementById("btn-resume");
+  if(r.pausado) {
+    if(txt) txt.innerHTML = "🔴 <strong>Disparos PAUSADOS</strong> — nenhuma mensagem será enviada";
+    if(btnP) btnP.style.display = "none";
+    if(btnR) btnR.style.display = "inline-flex";
+  } else {
+    if(txt) txt.innerHTML = "🟢 Disparos ativos e funcionando normalmente";
+    if(btnP) btnP.style.display = "inline-flex";
+    if(btnR) btnR.style.display = "none";
+  }
+}
+
+async function schedulerPause() {
+  if(!confirm("Pausar TODOS os disparos agora? Nenhuma mensagem será enviada até retomar.")) return;
+  const btn = document.getElementById("btn-pause");
+  btn.disabled = true; btn.textContent = "⏳ Pausando…";
+  const r = await fetch("/api/admin/scheduler-pause", {method:"POST"}).then(x=>x.json()).catch(()=>({ok:false}));
+  btn.disabled = false; btn.textContent = "⏸ Pausar disparos";
+  if(r.ok) { toast(`✅ Pausado! ${r.posts_resetados} post(s) resetados.`); schedulerCheckStatus(); }
+  else toast("❌ Erro ao pausar");
+}
+
+async function schedulerResume() {
+  const r = await fetch("/api/admin/scheduler-resume", {method:"POST"}).then(x=>x.json()).catch(()=>({ok:false}));
+  if(r.ok) { toast("▶ Disparos retomados!"); schedulerCheckStatus(); }
+  else toast("❌ Erro ao retomar");
+}
+
 async function limparMidiasOrfas() {
   if (!confirm("Apagar do banco todas as mídias que NÃO estão em posts ativos? Isso libera espaço no PostgreSQL.")) return;
   const status = document.getElementById("reenviar-status");
@@ -2366,7 +2409,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabConfig = document.getElementById("tab-config");
   if (tabConfig) {
     const obs = new MutationObserver(() => {
-      if (tabConfig.classList.contains("active")) { waConnCheck(); }
+      if (tabConfig.classList.contains("active")) { waConnCheck(); schedulerCheckStatus(); }
       else { clearInterval(waConnTimer); waConnTimer = null; }
     });
     obs.observe(tabConfig, {attributes:true, attributeFilter:["class"]});

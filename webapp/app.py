@@ -971,6 +971,14 @@ def _process_post_inner(post_id, row, cfg):
         c.close()
 
     for i, g in enumerate(wa_groups):
+        if _scheduler_paused:
+            print(f"[process_post] pausa de emergência — abortando envio do post {post_id} no grupo {i+1}/{len(wa_groups)}")
+            result["wa"]["__pausado__"] = f"⏸ Pausado manualmente após {i} grupo(s)"
+            _save_partial()
+            c = db()
+            c.execute("UPDATE posts SET status='pending' WHERE id=?", (post_id,))
+            c.commit(); c.close()
+            return
         gid  = g.get("id", g) if isinstance(g, dict) else g
         name = g.get("name", gid) if isinstance(g, dict) else gid
         result["wa"][name] = "⏳ enviando..."

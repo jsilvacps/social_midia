@@ -1086,21 +1086,17 @@ def _scheduler_loop():
             ).fetchall()
             conn.close()
 
-            # Auto-resume: reescalona posts suspensos com intervalo de 15 min
-            resume_offset = 0
+            # Auto-resume: volta posts suspensos para pending mantendo horário original
             for row in suspended:
                 sf = row["suspend_from"] or ""
                 st = row["suspend_to"]   or ""
                 if not _in_suspend_window(sf, st, now_hm):
-                    new_sched = (now_dt + timedelta(minutes=resume_offset)).strftime("%Y-%m-%dT%H:%M:00")
                     c = db()
-                    affected = c.execute(
-                        "UPDATE posts SET status='pending', scheduled_at=? WHERE id=? AND status='suspended'",
-                        (new_sched, row["id"])
-                    ).rowcount
+                    c.execute(
+                        "UPDATE posts SET status='pending' WHERE id=? AND status='suspended'",
+                        (row["id"],)
+                    )
                     c.commit(); c.close()
-                    if affected:
-                        resume_offset += 15
 
             for row in list(rows) + list(stale):
                 sf = row["suspend_from"] or ""

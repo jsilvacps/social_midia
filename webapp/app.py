@@ -1057,6 +1057,16 @@ def _in_suspend_window(suspend_from: str, suspend_to: str, now_hm: str) -> bool:
 # ── Scheduler Thread ───────────────────────────────────────────────────────────
 _scheduler_paused = False  # flag de pausa de emergência
 
+# Recupera posts orphanados por crash/restart: queued/sending → pending
+try:
+    _c = db()
+    _n = _c.execute("UPDATE posts SET status='pending' WHERE status IN ('queued','sending')").rowcount
+    _c.commit(); _c.close()
+    if _n:
+        print(f"[startup] {_n} post(s) orphanados resetados para pending")
+except Exception as _e:
+    print(f"[startup] erro ao resetar orphanados: {_e}")
+
 def _scheduler_loop():
     global _scheduler_paused
     while True:
@@ -1074,13 +1084,7 @@ def _scheduler_loop():
                 "SELECT id, suspend_from, suspend_to FROM posts WHERE status='pending' AND scheduled_at<=?",
                 (now_str + ":59",)
             ).fetchall()
-            # Posts presos como 'queued' há mais de 5 min (thread nunca chegou a rodar)
-            # NÃO recupera 'sending' — esses podem estar rodando normalmente com muitos grupos
-            stale = conn.execute(
-                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='queued' AND scheduled_at<=?",
-                ((now_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M") + ":59",)
-            ).fetchall()
-            # Posts suspensos que saíram da janela de pausa → auto-resume com 15 min entre cada
+            # Posts suspensos que saíram da janela de pausa
             suspended = conn.execute(
                 "SELECT id, suspend_from, suspend_to FROM posts WHERE status='suspended' ORDER BY scheduled_at ASC"
             ).fetchall()
@@ -1098,7 +1102,7 @@ def _scheduler_loop():
                     )
                     c.commit(); c.close()
 
-            for row in list(rows) + list(stale):
+            for row in rows:
                 sf = row["suspend_from"] or ""
                 st = row["suspend_to"]   or ""
                 if _in_suspend_window(sf, st, now_hm):
@@ -1106,10 +1110,10 @@ def _scheduler_loop():
                     c.execute("UPDATE posts SET status='suspended' WHERE id=?", (row["id"],))
                     c.commit(); c.close()
                 else:
-                    # Marca como 'queued' atomicamente antes de lançar a thread
+                    # Marca como 'queued' atomicamente — só avança se ainda estiver 'pending'
                     c = db()
                     affected = c.execute(
-                        "UPDATE posts SET status='queued' WHERE id=? AND status IN ('pending','queued')",
+                        "UPDATE posts SET status='queued' WHERE id=? AND status='pending'",
                         (row["id"],)
                     ).rowcount
                     c.commit(); c.close()

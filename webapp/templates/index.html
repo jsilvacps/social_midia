@@ -658,6 +658,32 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     </div>
     {% endif %}
 
+    <!-- Pausa Noturna Global -->
+    <div class="card">
+      <p class="card-title">🌙 Pausa Noturna Global</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+        Nenhum disparo será feito dentro deste intervalo, independente do horário agendado.
+      </p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="global-suspend-enabled" onchange="document.getElementById('global-suspend-times').style.display=this.checked?'flex':'none'">
+          Ativar pausa noturna global
+        </label>
+      </div>
+      <div id="global-suspend-times" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="field" style="margin:0;flex:1;min-width:100px">
+          <label style="font-size:11px">Das</label>
+          <input type="time" id="global-suspend-from" value="22:00">
+        </div>
+        <span style="color:var(--muted);padding-top:16px">→</span>
+        <div class="field" style="margin:0;flex:1;min-width:100px">
+          <label style="font-size:11px">Até</label>
+          <input type="time" id="global-suspend-to" value="06:00">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveGlobalSuspend()">💾 Salvar pausa noturna</button>
+    </div>
+
     <!-- Conectar WhatsApp -->
     <div class="card" id="wa-connect-card">
       <p class="card-title">📱 Conectar WhatsApp</p>
@@ -966,6 +992,12 @@ async function init() {
   if(cfg.ig_token)     document.getElementById("ig-token").value     = cfg.ig_token;
   if(cfg.app_url)        document.getElementById("app-url").value        = cfg.app_url;
   if(cfg.google_api_key) document.getElementById("google-api-key").value = cfg.google_api_key;
+  if(cfg.suspend_from && cfg.suspend_to) {
+    document.getElementById("global-suspend-enabled").checked = true;
+    document.getElementById("global-suspend-from").value = cfg.suspend_from;
+    document.getElementById("global-suspend-to").value   = cfg.suspend_to;
+    document.getElementById("global-suspend-times").style.display = "flex";
+  }
 
   if("serviceWorker" in navigator)
     navigator.serviceWorker.register("/static/sw.js?v=5").catch(()=>{});
@@ -1958,6 +1990,16 @@ async function saveConfig() {
   } else {
     toast("❌ Erro ao salvar: " + (resp.error||"desconhecido"));
   }
+}
+
+async function saveGlobalSuspend() {
+  const enabled = document.getElementById("global-suspend-enabled").checked;
+  const sf = enabled ? document.getElementById("global-suspend-from").value : "";
+  const st = enabled ? document.getElementById("global-suspend-to").value   : "";
+  const r = await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({suspend_from: sf, suspend_to: st})}).then(r=>r.json());
+  if(r.ok) toast(enabled ? `✅ Pausa noturna ativa: ${sf} → ${st}` : "✅ Pausa noturna desativada");
+  else toast("❌ Erro ao salvar");
 }
 
 async function saveEvo() {

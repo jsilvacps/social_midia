@@ -1085,21 +1085,34 @@ def _scheduler_loop():
             now_hm   = now_dt.strftime("%H:%M")
 
             conn = db()
-            # Posts pendentes prontos para enviar
+            # Posts pendentes prontos para enviar (inclui user_id para ler config de suspend)
             rows = conn.execute(
-                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='pending' AND scheduled_at<=?",
+                "SELECT id, user_id, suspend_from, suspend_to FROM posts WHERE status='pending' AND scheduled_at<=?",
                 (now_str + ":59",)
             ).fetchall()
             # Posts suspensos que saíram da janela de pausa
             suspended = conn.execute(
-                "SELECT id, suspend_from, suspend_to FROM posts WHERE status='suspended' ORDER BY scheduled_at ASC"
+                "SELECT id, user_id, suspend_from, suspend_to FROM posts WHERE status='suspended' ORDER BY scheduled_at ASC"
             ).fetchall()
             conn.close()
 
-            # Auto-resume: volta posts suspensos para pending mantendo horário original
-            for row in suspended:
+            # Cache de config por user para não bater no banco a cada post
+            _cfg_cache = {}
+            def _get_suspend(row):
+                """Retorna (suspend_from, suspend_to) do post ou, se vazio, da config do usuário."""
                 sf = row["suspend_from"] or ""
                 st = row["suspend_to"]   or ""
+                if sf and st:
+                    return sf, st
+                uid = row["user_id"] or 0
+                if uid not in _cfg_cache:
+                    _cfg_cache[uid] = load_config(user_id=uid)
+                cfg = _cfg_cache[uid]
+                return cfg.get("suspend_from", ""), cfg.get("suspend_to", "")
+
+            # Auto-resume: volta posts suspensos para pending mantendo horário original
+            for row in suspended:
+                sf, st = _get_suspend(row)
                 if not _in_suspend_window(sf, st, now_hm):
                     c = db()
                     c.execute(
@@ -1109,8 +1122,7 @@ def _scheduler_loop():
                     c.commit(); c.close()
 
             for row in rows:
-                sf = row["suspend_from"] or ""
-                st = row["suspend_to"]   or ""
+                sf, st = _get_suspend(row)
                 if _in_suspend_window(sf, st, now_hm):
                     c = db()
                     c.execute("UPDATE posts SET status='suspended' WHERE id=?", (row["id"],))

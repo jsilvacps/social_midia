@@ -1057,13 +1057,19 @@ def _in_suspend_window(suspend_from: str, suspend_to: str, now_hm: str) -> bool:
 # ── Scheduler Thread ───────────────────────────────────────────────────────────
 _scheduler_paused = False  # flag de pausa de emergência
 
-# Recupera posts orphanados por crash/restart: queued/sending → pending
+# Recupera posts orphanados por crash/restart
 try:
     _c = db()
-    _n = _c.execute("UPDATE posts SET status='pending' WHERE status IN ('queued','sending')").rowcount
+    # queued = nunca chegou a rodar → volta para pending
+    _nq = _c.execute("UPDATE posts SET status='pending' WHERE status='queued'").rowcount
+    # sending = estava no meio do envio → marca partial (não reenvia automaticamente)
+    _ns = _c.execute(
+        "UPDATE posts SET status='partial', result=? WHERE status='sending'",
+        (json.dumps({"error": "Envio interrompido por reinicialização do servidor"}),)
+    ).rowcount
     _c.commit(); _c.close()
-    if _n:
-        print(f"[startup] {_n} post(s) orphanados resetados para pending")
+    if _nq or _ns:
+        print(f"[startup] orphanados: {_nq} queued→pending, {_ns} sending→partial")
 except Exception as _e:
     print(f"[startup] erro ao resetar orphanados: {_e}")
 

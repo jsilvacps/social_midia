@@ -1111,14 +1111,29 @@ def _scheduler_loop():
                 return cfg.get("suspend_from", ""), cfg.get("suspend_to", "")
 
             # Auto-resume: volta posts suspensos para pending mantendo horário original
+            today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
             for row in suspended:
                 sf, st = _get_suspend(row)
                 if not _in_suspend_window(sf, st, now_hm):
+                    # Busca scheduled_at do post para decidir se cancela ou retoma
+                    pc = db()
+                    prow = pc.execute("SELECT scheduled_at FROM posts WHERE id=?", (row["id"],)).fetchone()
+                    pc.close()
+                    sched_str = prow["scheduled_at"] if prow else ""
+                    try:
+                        sched_dt = datetime.fromisoformat(sched_str)
+                        if sched_dt.tzinfo is None:
+                            sched_dt = sched_dt.replace(tzinfo=timezone(timedelta(hours=-3)))
+                    except Exception:
+                        sched_dt = today_start  # fallback: retoma normalmente
+
                     c = db()
-                    c.execute(
-                        "UPDATE posts SET status='pending' WHERE id=? AND status='suspended'",
-                        (row["id"],)
-                    )
+                    if sched_dt < today_start:
+                        # Post de um dia anterior que ficou preso — cancela para não duplicar
+                        print(f"[scheduler] post {row['id']} scheduled_at={sched_str} é de dia anterior, cancelando")
+                        c.execute("UPDATE posts SET status='cancelled' WHERE id=? AND status='suspended'", (row["id"],))
+                    else:
+                        c.execute("UPDATE posts SET status='pending' WHERE id=? AND status='suspended'", (row["id"],))
                     c.commit(); c.close()
 
             for row in rows:

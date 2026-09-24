@@ -239,6 +239,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .s-sent{background:#052E1E;color:#34D399}
 .s-failed{background:#2A0808;color:#FCA5A5}
 .s-partial{background:#1C1000;color:#FCD34D}
+.s-cancelled{background:#1A1A1A;color:#6B7280}
 .post-caption{font-size:13px;color:#CBD5E1;line-height:1.5;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .post-time{font-size:11px;color:var(--muted);margin-top:6px}
@@ -1512,6 +1513,8 @@ function batchSummaryStatus(posts) {
   if(posts.some(p=>p.status==="failed"))    return {label:"❌ Com falha", cls:"s-failed"};
   if(posts.some(p=>p.status==="partial"))   return {label:"⚠️ Parcial",  cls:"s-partial"};
   if(posts.every(p=>p.status==="suspended")) return {label:"🔕 Suspenso", cls:"s-pending"};
+  if(posts.every(p=>["cancelled","sent","failed","partial"].includes(p.status))) return {label:"✅ Concluído", cls:"s-sent"};
+  if(posts.some(p=>p.status==="cancelled"))  return {label:"🚫 Cancelado", cls:"s-cancelled"};
   return {label:"🕐 Agendado", cls:"s-pending"};
 }
 

@@ -2101,6 +2101,21 @@ def _media_persist(filename: str, content: bytes, mimetype: str, is_library: boo
         ok = r2_upload(filename, content, mimetype)
         if ok:
             print(f"[media_persist] R2 OK: {filename} ({len(content):,} bytes)")
+            # Salva metadado no PG também para que a listagem funcione
+            if USE_PG:
+                try:
+                    raw = psycopg2.connect(DATABASE_URL)
+                    cur = raw.cursor()
+                    cur.execute(
+                        """INSERT INTO media_files (filename, content, mimetype, is_library, size)
+                           VALUES (%s, %s, %s, %s, %s)
+                           ON CONFLICT (filename) DO UPDATE
+                           SET mimetype=EXCLUDED.mimetype, size=EXCLUDED.size""",
+                        (filename, b"", mimetype, int(is_library), len(content))
+                    )
+                    raw.commit(); raw.close()
+                except Exception as e:
+                    print(f"[media_persist] aviso PG metadado: {e}")
             return True
         print(f"[media_persist] R2 falhou, tentando PG...")
     # 2. Fallback para PostgreSQL

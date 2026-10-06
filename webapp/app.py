@@ -2527,9 +2527,23 @@ def api_library_upload():
 @require_login
 def api_library_delete(filename):
     safe = Path(filename).name
+    # Apaga do R2 se estiver configurado
+    if USE_R2:
+        try:
+            _r2_client.delete_object(Bucket=R2_BUCKET, Key=safe)
+        except Exception as e:
+            print(f"[library_delete] R2 erro: {e}")
+    # Apaga arquivo local também (caso exista)
     path = LIBRARY_DIR / safe
     if path.exists():
         path.unlink()
+    # Remove de media_files se houver registro
+    try:
+        c = db()
+        c.execute("DELETE FROM media_files WHERE filename=? AND is_library=1", (safe,))
+        c.commit(); c.close()
+    except Exception:
+        pass
     return jsonify({"ok": True})
 
 @app.route("/api/library/debug/<filename>")

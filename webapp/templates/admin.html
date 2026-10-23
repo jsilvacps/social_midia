@@ -642,17 +642,21 @@ function _waSetState(state, phone) {
   var hint    = _waEl("wa-connect-hint");
   var btnC    = _waEl("wa-btn-create");
   var btnD    = _waEl("wa-btn-disc");
+  var btnQr   = _waEl("wa-btn-qr");
+  var qrWrap  = _waEl("wa-qr-wrap");
 
   // reset tudo
   if(pbadge) pbadge.style.display = "none";
   if(hint)   hint.style.display   = "none";
   if(btnC)   btnC.style.display   = "none";
   if(btnD)   btnD.style.display   = "none";
+  if(btnQr)  btnQr.style.display  = "none";
 
   if (state === "none") {
     badge.textContent = "🔴 Sem instância";
     badge.style.color = "var(--danger)";
-    if(btnC) btnC.style.display = "inline-flex";
+    if(btnC)  btnC.style.display  = "inline-flex";
+    if(qrWrap) qrWrap.style.display = "none";
     clearInterval(waPollTimer); waPollTimer = null;
 
   } else if (state === "connected") {
@@ -665,16 +669,32 @@ function _waSetState(state, phone) {
       _waEl("wa-phone-num").textContent = p;
       pbadge.style.display = "block";
     }
-    if(btnD) btnD.style.display = "inline-flex";
+    if(btnD)  btnD.style.display  = "inline-flex";
+    if(qrWrap) qrWrap.style.display = "none";
     clearInterval(waPollTimer); waPollTimer = null;
 
   } else { // waiting
-    badge.textContent = "🟡 Aguardando conexão do cliente";
+    badge.textContent = "🟡 Aguardando conexão";
     badge.style.color = "#f59e0b";
-    if(hint) hint.style.display = "block";
-    if(btnD) btnD.style.display = "inline-flex";
+    if(btnD)  btnD.style.display  = "inline-flex";
+    if(btnQr) btnQr.style.display = "inline-flex";
     if (!waPollTimer)
       waPollTimer = setInterval(() => { if(waUid) loadWaStatus(waUid); }, 5000);
+  }
+}
+
+async function loadWaQr(uid) {
+  var qrWrap = _waEl("wa-qr-wrap");
+  var qrImg  = _waEl("wa-qr-img");
+  if(qrWrap) qrWrap.style.display = "block";
+  if(qrImg)  qrImg.src = "";
+  var r = await fetch("/api/admin/users/" + uid + "/wa-qr").then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if (r.ok && r.qr) {
+    var src = r.qr.startsWith("data:") ? r.qr : "data:image/png;base64," + r.qr;
+    if(qrImg) qrImg.src = src;
+  } else {
+    if(qrWrap) qrWrap.style.display = "none";
+    toast("❌ " + (r.error || "QR não disponível — verifique se a instância está aguardando conexão"));
   }
 }
 
@@ -731,8 +751,12 @@ async function createWaInstance() {
   if(btn){ btn.disabled=true; btn.textContent="⏳ Criando…"; }
   var r = await fetch("/api/admin/users/" + waUid + "/wa-instance", {method:"POST"}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
   if(btn){ btn.disabled=false; btn.textContent="➕ Criar Instância"; }
-  if (r.ok) { toast("✅ Instância criada! Aguardando cliente conectar."); loadWaStatus(waUid); }
-  else toast("❌ " + (r.error || "Erro ao criar instância"));
+  if (r.ok) {
+    toast("✅ Instância criada!");
+    loadWaStatus(waUid);
+    // Aguarda 1.5s para a instância inicializar e carrega QR automaticamente
+    setTimeout(function(){ loadWaQr(waUid); }, 1500);
+  } else toast("❌ " + (r.error || "Erro ao criar instância"));
 }
 
 async function disconnectWa() {
@@ -846,6 +870,14 @@ loadGruposWa();
     <div id="wa-status-badge" style="font-size:14px;margin-bottom:8px;font-weight:600">…</div>
     <div id="wa-phone-badge" style="display:none;font-size:12px;color:var(--muted);margin-bottom:12px">📞 <span id="wa-phone-num"></span></div>
 
+    <!-- QR Code -->
+    <div id="wa-qr-wrap" style="display:none;margin-bottom:14px">
+      <img id="wa-qr-img" src="" alt="QR Code"
+           style="width:200px;height:200px;border-radius:10px;border:4px solid var(--border);background:#fff;object-fit:contain">
+      <div id="wa-qr-hint" style="font-size:11px;color:var(--muted);margin-top:6px">Escaneie com o WhatsApp do cliente</div>
+      <button onclick="loadWaQr(waUid)" class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px">🔄 Atualizar QR</button>
+    </div>
+
     <!-- Aviso para cliente conectar -->
     <div id="wa-connect-hint" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 14px;font-size:12px;color:#fbbf24;margin-bottom:14px;line-height:1.5">
       📲 Peça ao cliente para acessar o app e conectar o WhatsApp na aba <strong>⚙️ Config</strong>
@@ -855,6 +887,10 @@ loadGruposWa();
       <button id="wa-btn-create" onclick="createWaInstance()"
               class="btn btn-success btn-sm" style="display:none">
         ➕ Criar Instância
+      </button>
+      <button id="wa-btn-qr" onclick="loadWaQr(waUid)"
+              class="btn btn-primary btn-sm" style="display:none">
+        📷 Ver QR Code
       </button>
       <button id="wa-btn-disc" onclick="disconnectWa()"
               class="btn btn-danger btn-sm" style="display:none">

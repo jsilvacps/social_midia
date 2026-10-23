@@ -3207,18 +3207,35 @@ def api_wa_qr_user():
                              "evo_instance": instance}, user_id=uid)
     if not all([base, token, instance]):
         return jsonify({"ok": False, "error": f"Não configurado — base={base!r} inst={instance!r}"})
-    try:
+
+    def _try_connect_qr():
         r = requests.get(f"{base}/instance/connect/{instance}",
                          headers={"apikey": token}, timeout=30)
+        return r
+
+    try:
+        r = _try_connect_qr()
+
+        # Instância não existe — recria automaticamente
+        if r.status_code == 404 or (r.status_code == 400 and "not exist" in r.text.lower()):
+            print(f"[wa-qr] instância {instance} não existe, recriando…")
+            cr = requests.post(f"{base}/instance/create",
+                               headers={"apikey": token, "Content-Type": "application/json"},
+                               json={"instanceName": instance, "integration": "WHATSAPP-BAILEYS", "qrcode": True},
+                               timeout=15)
+            print(f"[wa-qr] recreate: {cr.status_code} {cr.text[:200]}")
+            if cr.status_code not in (200, 201):
+                return jsonify({"ok": False, "error": f"Falha ao recriar instância: {cr.text[:200]}"})
+            time.sleep(2)  # aguarda instância inicializar
+            r = _try_connect_qr()
+
         if r.status_code == 200:
             d = r.json()
             qr = d.get("base64") or d.get("qrcode", {}).get("base64", "")
             if qr and qr.startswith("data:image"):
                 qr = qr.split(",", 1)[1]
             if not qr:
-                # Instância já conectada — não há QR para exibir
-                return jsonify({"ok": False, "already_connected": True,
-                                "error": "já conectado"})
+                return jsonify({"ok": False, "already_connected": True, "error": "já conectado"})
             return jsonify({"ok": True, "qr_base64": qr})
         return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"})
     except Exception as exc:
@@ -3235,6 +3252,17 @@ def api_wa_pairing_user():
     if not phone:
         return jsonify({"ok": False, "error": "Informe o número"})
     try:
+        # Se instância não existe, recria antes de gerar pairing code
+        chk = requests.get(f"{base}/instance/connect/{instance}",
+                           headers={"apikey": token}, timeout=10)
+        if chk.status_code == 404 or (chk.status_code == 400 and "not exist" in chk.text.lower()):
+            print(f"[pairing-code] instância {instance} não existe, recriando…")
+            cr = requests.post(f"{base}/instance/create",
+                               headers={"apikey": token, "Content-Type": "application/json"},
+                               json={"instanceName": instance, "integration": "WHATSAPP-BAILEYS", "qrcode": True},
+                               timeout=15)
+            time.sleep(2)
+
         # Tenta endpoint v2
         r = requests.post(f"{base}/instance/pairingCode/{instance}",
                           headers={"apikey": token, "Content-Type": "application/json"},

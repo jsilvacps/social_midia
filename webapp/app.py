@@ -4030,6 +4030,20 @@ def webhook_mensagens():
 
     return jsonify({"ok": True})
 
+# ── Error handler (log traceback para diagnóstico) ────────────────────────────
+import traceback as _traceback
+
+@app.errorhandler(Exception)
+def _handle_exception(e):
+    tb = _traceback.format_exc()
+    print(f"[500] {e}\n{tb}", flush=True)
+    from flask import render_template_string
+    return render_template_string("""<!doctype html><html><head><title>Erro 500</title></head><body>
+<h2>Erro interno do servidor</h2>
+<p style="color:#555">{{ msg }}</p>
+<pre style="background:#f8f8f8;padding:14px;font-size:12px;overflow:auto">{{ tb }}</pre>
+</body></html>""", msg=str(e), tb=tb), 500
+
 # ── Main ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import socket

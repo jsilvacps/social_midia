@@ -225,7 +225,7 @@ class _RowWrapper:
 
 def db():
     if USE_PG:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=10)
         return _PgWrapper(conn)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -406,7 +406,10 @@ def init_db():
                     print(f"[init_db] PG migration erro {table}.{col}: {e}")
         conn2.close()
 
-init_db()
+try:
+    init_db()
+except Exception as _init_err:
+    print(f"[startup] AVISO init_db: {_init_err}", flush=True)
 
 def _hash_pw(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
@@ -432,7 +435,10 @@ def seed_admin():
         conn.commit()
     conn.close()
 
-seed_admin()
+try:
+    seed_admin()
+except Exception as _seed_err:
+    print(f"[startup] AVISO seed_admin: {_seed_err}", flush=True)
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 def get_current_user():

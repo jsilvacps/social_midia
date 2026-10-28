@@ -445,10 +445,14 @@ def get_current_user():
     uid = session.get("user_id")
     if not uid:
         return None
-    conn = db()
-    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    conn.close()
-    return dict(u) if u else None
+    try:
+        conn = db()
+        u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        conn.close()
+        return dict(u) if u else None
+    except Exception as e:
+        print(f"[get_current_user] DB erro: {e}", flush=True)
+        return None
 
 def require_login(f):
     @wraps(f)
